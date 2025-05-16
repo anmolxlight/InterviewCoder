@@ -15,8 +15,15 @@ interface Config {
   opacity: number;
 }
 
+// Add extended config interface for additional settings
+interface ExtendedConfig {
+  deepgramApiKey?: string;
+  speechToTextEnabled?: boolean;
+}
+
 export class ConfigHelper extends EventEmitter {
   private configPath: string;
+  private extendedConfigPath: string;
   private defaultConfig: Config = {
     apiKey: "",
     apiProvider: "gemini", // Default to Gemini
@@ -26,20 +33,29 @@ export class ConfigHelper extends EventEmitter {
     language: "python",
     opacity: 1.0
   };
+  
+  private defaultExtendedConfig: ExtendedConfig = {
+    deepgramApiKey: "",
+    speechToTextEnabled: false
+  };
 
   constructor() {
     super();
     // Use the app's user data directory to store the config
     try {
       this.configPath = path.join(app.getPath('userData'), 'config.json');
+      this.extendedConfigPath = path.join(app.getPath('userData'), 'extended-config.json');
       console.log('Config path:', this.configPath);
+      console.log('Extended config path:', this.extendedConfigPath);
     } catch (err) {
       console.warn('Could not access user data path, using fallback');
       this.configPath = path.join(process.cwd(), 'config.json');
+      this.extendedConfigPath = path.join(process.cwd(), 'extended-config.json');
     }
     
-    // Ensure the initial config file exists
+    // Ensure the initial config files exist
     this.ensureConfigExists();
+    this.ensureExtendedConfigExists();
   }
 
   /**
@@ -52,6 +68,19 @@ export class ConfigHelper extends EventEmitter {
       }
     } catch (err) {
       console.error("Error ensuring config exists:", err);
+    }
+  }
+  
+  /**
+   * Ensure extended config file exists
+   */
+  private ensureExtendedConfigExists(): void {
+    try {
+      if (!fs.existsSync(this.extendedConfigPath)) {
+        this.saveExtendedConfig(this.defaultExtendedConfig);
+      }
+    } catch (err) {
+      console.error("Error ensuring extended config exists:", err);
     }
   }
 
@@ -116,6 +145,30 @@ export class ConfigHelper extends EventEmitter {
   }
 
   /**
+   * Load extended configuration settings
+   */
+  public loadExtendedConfig(): ExtendedConfig {
+    try {
+      if (fs.existsSync(this.extendedConfigPath)) {
+        const configData = fs.readFileSync(this.extendedConfigPath, 'utf8');
+        const config = JSON.parse(configData);
+        
+        return {
+          ...this.defaultExtendedConfig,
+          ...config
+        };
+      }
+      
+      // If no config exists, create a default one
+      this.saveExtendedConfig(this.defaultExtendedConfig);
+      return this.defaultExtendedConfig;
+    } catch (err) {
+      console.error("Error loading extended config:", err);
+      return this.defaultExtendedConfig;
+    }
+  }
+
+  /**
    * Save configuration to disk
    */
   public saveConfig(config: Config): void {
@@ -129,6 +182,23 @@ export class ConfigHelper extends EventEmitter {
       fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
     } catch (err) {
       console.error("Error saving config:", err);
+    }
+  }
+  
+  /**
+   * Save extended configuration to disk
+   */
+  public saveExtendedConfig(config: ExtendedConfig): void {
+    try {
+      // Ensure the directory exists
+      const configDir = path.dirname(this.extendedConfigPath);
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      // Write the config file
+      fs.writeFileSync(this.extendedConfigPath, JSON.stringify(config, null, 2));
+    } catch (err) {
+      console.error("Error saving extended config:", err);
     }
   }
 
@@ -194,6 +264,21 @@ export class ConfigHelper extends EventEmitter {
     } catch (error) {
       console.error('Error updating config:', error);
       return this.defaultConfig;
+    }
+  }
+  
+  /**
+   * Update specific extended configuration values
+   */
+  public updateExtendedConfig(updates: Partial<ExtendedConfig>): ExtendedConfig {
+    try {
+      const currentConfig = this.loadExtendedConfig();
+      const newConfig = { ...currentConfig, ...updates };
+      this.saveExtendedConfig(newConfig);
+      return newConfig;
+    } catch (error) {
+      console.error('Error updating extended config:', error);
+      return this.defaultExtendedConfig;
     }
   }
 
@@ -337,6 +422,22 @@ export class ConfigHelper extends EventEmitter {
       
       return { valid: false, error: errorMessage };
     }
+  }
+
+  /**
+   * Check if there's a Deepgram API key configured
+   */
+  public hasDeepgramKey(): boolean {
+    const config = this.loadExtendedConfig();
+    return Boolean(config.deepgramApiKey && config.deepgramApiKey.trim() !== '');
+  }
+  
+  /**
+   * Check if speech-to-text is enabled
+   */
+  public isSpeechToTextEnabled(): boolean {
+    const config = this.loadExtendedConfig();
+    return Boolean(config.speechToTextEnabled);
   }
 }
 

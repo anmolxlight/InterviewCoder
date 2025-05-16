@@ -348,4 +348,14 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       return { success: false, error: "Failed to delete last screenshot" }
     }
   })
+
+  // Get extended config
+  ipcMain.handle('get-extended-config', async () => {
+    try {
+      return configHelper.loadExtendedConfig();
+    } catch (error) {
+      console.error('Error loading extended config:', error);
+      throw error;
+    }
+  });
 }

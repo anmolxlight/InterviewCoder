@@ -8,6 +8,8 @@ import { ShortcutsHelper } from "./shortcuts"
 import { initAutoUpdater } from "./autoUpdater"
 import { configHelper } from "./ConfigHelper"
 import * as dotenv from "dotenv"
+import { initializeSpeechToTextHelper, getSpeechToTextHelper } from './SpeechToTextHelper'
+import { initializeSystemAudioHelper, getSystemAudioHelper } from './SystemAudioHelper'
 
 // Constants
 const isDev = process.env.NODE_ENV === "development"
@@ -561,6 +563,19 @@ async function initializeApp() {
       isDev ? "development" : "production",
       "mode"
     )
+
+    // Initialize speech-to-text helper
+    if (state.mainWindow) {
+      const speechToTextHelper = initializeSpeechToTextHelper(state.mainWindow);
+      
+      // Setup handler for speech transcriptions
+      speechToTextHelper.on('transcription', (transcript: string) => {
+        handleSpeechTranscription(transcript);
+      });
+      
+      // Initialize system audio helper
+      initializeSystemAudioHelper(state.mainWindow);
+    }
   } catch (error) {
     console.error("Failed to initialize application:", error)
     app.quit()
@@ -677,6 +692,46 @@ function getHasDebugged(): boolean {
   return state.hasDebugged
 }
 
+/**
+ * Handle speech transcriptions by sending to AI for processing
+ */
+async function handleSpeechTranscription(transcript: string): Promise<void> {
+  console.log('Processing speech transcription:', transcript);
+  
+  try {
+    const config = configHelper.loadConfig();
+    
+    // Use the ProcessingHelper to handle the AI request
+    const processingHelper = getProcessingHelper();
+    if (!processingHelper) {
+      console.error('Processing helper not available');
+      return;
+    }
+    
+    // Process the transcript through AI
+    const response = await processingHelper.processTranscriptionWithAI(transcript);
+    
+    // Send the AI response to the renderer
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send('ai-response', response);
+    }
+  } catch (error) {
+    console.error('Error processing speech transcription:', error);
+    
+    // Notify the renderer of the error
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send('ai-response-error', error.message || 'Error processing speech');
+    }
+  }
+}
+
+// Add this function with the other getter functions
+function getProcessingHelper(): ProcessingHelper | null {
+  return state.processingHelper;
+}
+
 // Export state and functions for other modules
 export {
   state,
@@ -700,7 +755,8 @@ export {
   getImagePreview,
   deleteScreenshot,
   setHasDebugged,
-  getHasDebugged
+  getHasDebugged,
+  getProcessingHelper
 }
 
 app.whenReady().then(initializeApp)

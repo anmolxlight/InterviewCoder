@@ -59,6 +59,22 @@ interface ElectronAPI {
   installUpdate: () => void
   onUpdateAvailable: (callback: (info: any) => void) => () => void
   onUpdateDownloaded: (callback: (info: any) => void) => () => void
+  // Speech-to-text methods
+  startSpeechRecognition: () => Promise<boolean>
+  stopSpeechRecognition: () => Promise<boolean>
+  updateDeepgramKey: (apiKey: string) => Promise<boolean>
+  toggleSpeechRecognition: (enabled: boolean) => Promise<boolean>
+  testDeepgramKey: (apiKey: string) => Promise<{valid: boolean, error?: string}>
+  getExtendedConfig: () => Promise<{deepgramApiKey?: string, speechToTextEnabled?: boolean}>
+  sendAudioData: (buffer: ArrayBuffer) => void
+  // Speech-to-text events
+  onSpeechRecognitionStarted: (callback: () => void) => () => void
+  onSpeechRecognitionStopped: (callback: () => void) => () => void
+  onSpeechRecognitionError: (callback: (error: string) => void) => () => void
+  onSpeechTranscription: (callback: (transcript: string) => void) => () => void
+  onAiResponse: (callback: (response: string) => void) => () => void
+  onAiResponseError: (callback: (error: string) => void) => () => void
+  processTranscript: (transcript: string) => Promise<boolean>
 }
 
 interface Window {

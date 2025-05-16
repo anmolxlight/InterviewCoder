@@ -1099,4 +1099,164 @@ If you include code examples, use proper markdown code blocks with language spec
       mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS)
     }
   }
+
+  /**
+   * Process a speech transcription with the selected AI model
+   * @param transcript The speech transcription to process
+   * @returns The AI response
+   */
+  public async processTranscriptionWithAI(transcript: string): Promise<string> {
+    console.log('Processing transcription with AI:', transcript);
+    
+    if (transcript.trim() === '') {
+      throw new Error('Empty transcript provided');
+    }
+    
+    // Load config to determine which AI provider to use
+    const config = configHelper.loadConfig();
+    
+    // Create a new abort controller for this request
+    const abortController = new AbortController();
+    this.currentProcessingAbortController = abortController;
+    
+    try {
+      let response: string = '';
+      
+      if (config.apiProvider === 'openai') {
+        // Process with OpenAI
+        response = await this.processTranscriptionWithOpenAI(transcript, abortController.signal);
+      } else {
+        // Process with Gemini
+        response = await this.processTranscriptionWithGemini(transcript, abortController.signal);
+      }
+      
+      // Clean up the abort controller
+      this.currentProcessingAbortController = null;
+      
+      return response;
+    } catch (error) {
+      console.error('Error processing transcription with AI:', error);
+      
+      // Clean up the abort controller
+      this.currentProcessingAbortController = null;
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Process a speech transcription with OpenAI
+   * @param transcript The speech transcription to process
+   * @param signal AbortSignal for cancellation
+   * @returns The OpenAI response
+   */
+  private async processTranscriptionWithOpenAI(transcript: string, signal: AbortSignal): Promise<string> {
+    if (!this.openaiClient) {
+      throw new Error('OpenAI client not initialized');
+    }
+    
+    try {
+      // Determine which model to use for conversation
+      const config = configHelper.loadConfig();
+      const model = config.solutionModel || 'gpt-4o'; // Use solution model for conversations
+      
+      // Create a simple system prompt
+      const systemPrompt = 'You are a helpful assistant responding to spoken queries. Be concise but informative in your responses.';
+      
+      // Make the API call
+      const response = await this.openaiClient.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: transcript }
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+      }, { signal });
+      
+      // Extract the response content
+      if (response.choices && response.choices.length > 0) {
+        return response.choices[0].message.content || 'No response generated';
+      } else {
+        return 'No response generated';
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Request was cancelled');
+      }
+      console.error('OpenAI API error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process a speech transcription with Gemini
+   * @param transcript The speech transcription to process
+   * @param signal AbortSignal for cancellation
+   * @returns The Gemini response
+   */
+  private async processTranscriptionWithGemini(transcript: string, signal: AbortSignal): Promise<string> {
+    if (!this.geminiApiKey) {
+      throw new Error('Gemini API key not configured');
+    }
+    
+    try {
+      // Determine which model to use
+      const config = configHelper.loadConfig();
+      const model = config.solutionModel || 'gemini-2.0-flash'; // Use solution model for conversations
+      
+      // Format the request for Gemini
+      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.geminiApiKey}`;
+      
+      // Create a message including system-like instruction
+      const messages: GeminiMessage[] = [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: 'You are a helpful assistant responding to spoken queries. Be concise but informative in your responses. Here is the query: ' + transcript,
+            },
+          ],
+        },
+      ];
+      
+      // Make the API request
+      const response = await axios.default.post(
+        apiEndpoint,
+        {
+          contents: messages,
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1000,
+          },
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          signal,
+        }
+      );
+      
+      // Parse and return the response
+      const geminiResponse = response.data as GeminiResponse;
+      if (
+        geminiResponse.candidates &&
+        geminiResponse.candidates.length > 0 &&
+        geminiResponse.candidates[0].content &&
+        geminiResponse.candidates[0].content.parts &&
+        geminiResponse.candidates[0].content.parts.length > 0
+      ) {
+        return geminiResponse.candidates[0].content.parts[0].text || 'No response generated';
+      } else {
+        return 'No response generated';
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Request was cancelled');
+      }
+      console.error('Gemini API error:', error);
+      throw error;
+    }
+  }
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import Queue from "../_pages/Queue"
 import Solutions from "../_pages/Solutions"
 import { useToast } from "../contexts/toast"
+import { SpeechToText, SpeechSettings } from '../components/SpeechToText';
 
 interface SubscribedAppProps {
   credits: number
@@ -20,6 +21,7 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
   const [view, setView] = useState<"queue" | "solutions" | "debug">("queue")
   const containerRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
+  const [isSpeechSettingsOpen, setIsSpeechSettingsOpen] = useState(false);
 
   // Let's ensure we reset queries etc. if some electron signals happen
   useEffect(() => {
@@ -151,6 +153,14 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
           setLanguage={setLanguage}
         />
       ) : null}
+      <div className="mt-6">
+        <h3 className="text-xl font-bold mb-2">Speech-to-Text</h3>
+        <SpeechToText onSettingsOpen={() => setIsSpeechSettingsOpen(true)} />
+        <SpeechSettings 
+          open={isSpeechSettingsOpen}
+          onOpenChange={setIsSpeechSettingsOpen}
+        />
+      </div>
     </div>
   )
 }

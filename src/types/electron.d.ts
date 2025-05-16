@@ -61,6 +61,25 @@ export interface ElectronAPI {
   openLink: (url: string) => void
   onApiKeyInvalid: (callback: () => void) => () => void
   removeListener: (eventName: string, callback: (...args: any[]) => void) => void
+  
+  // Speech-to-text methods
+  startSpeechRecognition: () => Promise<boolean>
+  stopSpeechRecognition: () => Promise<boolean>
+  updateDeepgramKey: (apiKey: string) => Promise<boolean>
+  toggleSpeechRecognition: (enabled: boolean) => Promise<boolean>
+  testDeepgramKey: (apiKey: string) => Promise<{valid: boolean, error?: string}>
+  onSpeechRecognitionStarted: (callback: () => void) => () => void
+  onSpeechRecognitionStopped: (callback: () => void) => () => void
+  onSpeechRecognitionError: (callback: (error: string) => void) => () => void
+  onSpeechTranscription: (callback: (transcript: string) => void) => () => void
+  onAiResponse: (callback: (response: string) => void) => () => void
+  onAiResponseError: (callback: (error: string) => void) => () => void
+  getExtendedConfig: () => Promise<any>
+  sendAudioData: (buffer: ArrayBuffer) => void
+  processTranscript: (transcript: string) => Promise<boolean>
+  
+  // System audio capture
+  captureSystemAudio: () => Promise<string>
 }
 
 declare global {

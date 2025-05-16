@@ -236,7 +236,77 @@ const electronAPI = {
       ipcRenderer.removeListener("delete-last-screenshot", subscription)
     }
   },
-  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot")
+  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot"),
+  // Speech-to-text methods
+  startSpeechRecognition: async () => {
+    return await ipcRenderer.invoke("start-speech-recognition");
+  },
+  stopSpeechRecognition: async () => {
+    return await ipcRenderer.invoke("stop-speech-recognition");
+  },
+  updateDeepgramKey: async (apiKey: string) => {
+    return await ipcRenderer.invoke("update-deepgram-key", apiKey);
+  },
+  toggleSpeechRecognition: async (enabled: boolean) => {
+    return await ipcRenderer.invoke("toggle-speech-recognition", enabled);
+  },
+  testDeepgramKey: async (apiKey: string) => {
+    return await ipcRenderer.invoke("test-deepgram-key", apiKey);
+  },
+  // Event listeners for speech-to-text
+  onSpeechRecognitionStarted: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on("speech-recognition-started", subscription);
+    return () => {
+      ipcRenderer.removeListener("speech-recognition-started", subscription);
+    };
+  },
+  onSpeechRecognitionStopped: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on("speech-recognition-stopped", subscription);
+    return () => {
+      ipcRenderer.removeListener("speech-recognition-stopped", subscription);
+    };
+  },
+  onSpeechRecognitionError: (callback: (error: string) => void) => {
+    const subscription = (_: any, error: string) => callback(error);
+    ipcRenderer.on("speech-recognition-error", subscription);
+    return () => {
+      ipcRenderer.removeListener("speech-recognition-error", subscription);
+    };
+  },
+  onSpeechTranscription: (callback: (transcript: string) => void) => {
+    const subscription = (_: any, transcript: string) => callback(transcript);
+    ipcRenderer.on("speech-transcription", subscription);
+    return () => {
+      ipcRenderer.removeListener("speech-transcription", subscription);
+    };
+  },
+  onAiResponse: (callback: (response: string) => void) => {
+    const subscription = (_: any, response: string) => callback(response);
+    ipcRenderer.on("ai-response", subscription);
+    return () => {
+      ipcRenderer.removeListener("ai-response", subscription);
+    };
+  },
+  onAiResponseError: (callback: (error: string) => void) => {
+    const subscription = (_: any, error: string) => callback(error);
+    ipcRenderer.on("ai-response-error", subscription);
+    return () => {
+      ipcRenderer.removeListener("ai-response-error", subscription);
+    };
+  },
+  getExtendedConfig: () => ipcRenderer.invoke("get-extended-config"),
+  sendAudioData: (buffer: ArrayBuffer) => {
+    ipcRenderer.send('audio-data', Buffer.from(buffer));
+  },
+  processTranscript: async (transcript: string) => {
+    return await ipcRenderer.invoke("process-transcript", transcript);
+  },
+  // Add system audio capture method
+  captureSystemAudio: async () => {
+    return await ipcRenderer.invoke("capture-system-audio");
+  },
 }
 
 // Before exposing the API
