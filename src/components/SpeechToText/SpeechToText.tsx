@@ -150,93 +150,39 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
   
-  // Refs to track the latest toggle state
-  const useMicrophoneRef = useRef<boolean>(true);
-  const useSystemAudioRef = useRef<boolean>(false);
-  
   // Timer for transcript processing
   const processingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastTranscriptRef = useRef<string>('');
   
-  // Update refs when state changes
-  useEffect(() => {
-    useMicrophoneRef.current = useMicrophone;
-    console.log(`Updated useMicrophoneRef to: ${useMicrophone}`);
-  }, [useMicrophone]);
-  
-  useEffect(() => {
-    useSystemAudioRef.current = useSystemAudio;
-    console.log(`Updated useSystemAudioRef to: ${useSystemAudio}`);
-  }, [useSystemAudio]);
-  
   // Clean up audio resources
   const cleanupAudio = () => {
-    console.log("Cleaning up audio resources...");
     try {
-      // Clear any processing timers
       if (processingTimerRef.current) {
-        console.log("Clearing processing timer");
         clearTimeout(processingTimerRef.current);
         processingTimerRef.current = null;
       }
       
-      // Disconnect and clean up processor node
       if (processorNodeRef.current) {
-        console.log("Disconnecting processor node");
-        try {
-          processorNodeRef.current.disconnect();
-        } catch (e) {
-          console.log("Error disconnecting processor node:", e);
-          // Continue with cleanup even if there's an error
-        }
+        processorNodeRef.current.disconnect();
         processorNodeRef.current = null;
       }
       
-      // Close and clean up audio context
       if (audioContextRef.current) {
-        console.log("Closing audio context");
-        try {
-          audioContextRef.current.close();
-        } catch (e) {
-          console.log("Error closing audio context:", e);
-          // Continue with cleanup even if there's an error
-        }
+        audioContextRef.current.close();
         audioContextRef.current = null;
       }
       
-      // Stop and clean up microphone stream
       if (mediaStreamRef.current) {
-        console.log("Stopping microphone tracks");
-        try {
-          mediaStreamRef.current.getTracks().forEach(track => {
-            console.log(`Stopping microphone track: ${track.kind}, enabled: ${track.enabled}`);
-            track.stop();
-          });
-        } catch (e) {
-          console.log("Error stopping microphone tracks:", e);
-          // Continue with cleanup even if there's an error
-        }
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
         mediaStreamRef.current = null;
       }
       
-      // Stop and clean up system audio stream
       if (systemAudioStreamRef.current) {
-        console.log("Stopping system audio tracks");
-        try {
-          systemAudioStreamRef.current.getTracks().forEach(track => {
-            console.log(`Stopping system audio track: ${track.kind}, enabled: ${track.enabled}`);
-            track.stop();
-          });
-        } catch (e) {
-          console.log("Error stopping system audio tracks:", e);
-          // Continue with cleanup even if there's an error
-        }
+        systemAudioStreamRef.current.getTracks().forEach(track => track.stop());
         systemAudioStreamRef.current = null;
       }
-      
-      console.log("Audio resources cleanup completed successfully");
     } catch (err) {
-      console.error("Error during audio resources cleanup:", err);
+      console.error('Error cleaning up audio resources:', err);
     }
   };
 
@@ -326,13 +272,6 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
   // Start capturing audio from the selected sources
   const startAudioCapture = async () => {
     try {
-      console.log(`Starting audio capture with microphone: ${useMicrophoneRef.current}, system audio: ${useSystemAudioRef.current}`);
-      
-      // Verify at least one source is enabled
-      if (!useMicrophoneRef.current && !useSystemAudioRef.current) {
-        throw new Error("Cannot start audio capture: no audio sources are enabled");
-      }
-      
       // Create audio context
       const audioContext = new AudioContext({
         sampleRate: 16000 // Deepgram expects 16kHz audio
@@ -348,33 +287,27 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       
       let hasAudioSource = false;
       
-      // Explicitly check current state before attempting to capture microphone
-      if (useMicrophoneRef.current === true) {
+      // Capture microphone if enabled
+      if (useMicrophone) {
         try {
-          console.log("Attempting to capture microphone audio...");
           const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
           mediaStreamRef.current = micStream;
           
           const micSourceNode = audioContext.createMediaStreamSource(micStream);
           micSourceNode.connect(mixerNode);
           hasAudioSource = true;
-          console.log('Microphone capture enabled successfully');
+          console.log('Microphone capture enabled');
         } catch (micErr) {
           console.error('Microphone access error:', micErr);
-          setError(`Microphone error: ${micErr.message}`);
-          
-          if (!useSystemAudioRef.current) {
+          if (!useSystemAudio) {
             throw new Error(`Microphone access error: ${micErr.message}`);
           }
         }
-      } else {
-        console.log("Microphone capture is explicitly disabled - not capturing microphone audio");
       }
       
-      // Explicitly check current state before attempting to capture system audio
-      if (useSystemAudioRef.current === true) {
+      // Capture system audio if enabled
+      if (useSystemAudio) {
         try {
-          console.log("Attempting to capture system audio...");
           // Request system audio source ID from the main process
           const sourceId = await window.electronAPI.captureSystemAudio();
           
@@ -395,25 +328,21 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
             const systemSourceNode = audioContext.createMediaStreamSource(systemStream);
             systemSourceNode.connect(mixerNode);
             hasAudioSource = true;
-            console.log('System audio capture enabled successfully');
+            console.log('System audio capture enabled');
           } else {
             throw new Error('Failed to get system audio source');
           }
         } catch (sysErr) {
           console.error('System audio access error:', sysErr);
-          setError(`System audio error: ${sysErr.message}`);
-          
-          if (!useMicrophoneRef.current || !mediaStreamRef.current) {
+          if (!useMicrophone || !mediaStreamRef.current) {
             throw new Error(`System audio access error: ${sysErr.message}`);
           }
         }
-      } else {
-        console.log("System audio capture is explicitly disabled - not capturing system audio");
       }
       
-      // Double-check that we actually have an audio source
+      // If no audio source could be captured, throw an error
       if (!hasAudioSource) {
-        throw new Error('Failed to capture any audio source. Please check your settings and permissions.');
+        throw new Error('No audio source available. Please enable at least one audio source.');
       }
       
       // Connect mixer to processor node
@@ -437,7 +366,7 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       // Connect processor to destination
       processorNode.connect(audioContext.destination);
       
-      console.log('Audio capture successfully started with enabled sources');
+      console.log('Audio capture started');
     } catch (err) {
       console.error('Error starting audio capture:', err);
       setError(`Audio access error: ${err.message}`);
@@ -449,7 +378,7 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
   const toggleListening = async () => {
     try {
       // Check if at least one audio source is selected
-      if (!isListening && !useMicrophoneRef.current && !useSystemAudioRef.current) {
+      if (!isListening && !useMicrophone && !useSystemAudio) {
         setError('Please enable at least one audio source (microphone or system audio).');
         return;
       }
@@ -479,128 +408,20 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
   };
   
   // Toggle functions for audio sources
-  const toggleMicrophone = async () => {
-    try {
-      const newMicState = !useMicrophoneRef.current;
-      console.log(`Toggling microphone from ${useMicrophoneRef.current} to ${newMicState}`);
-      
-      if (isListening) {
-        // When already listening, we need to stop and restart the audio capture
-        setError("Reconfiguring audio sources...");
-        await window.electronAPI.stopSpeechRecognition();
-        cleanupAudio();
-        
-        // Prevent toggling off both sources
-        if (newMicState === false && !useSystemAudioRef.current) {
-          setError("At least one audio source must be enabled. Microphone will remain on.");
-          // Don't change the microphone state
-          
-          // Restart with current settings
-          setTimeout(async () => {
-            try {
-              await window.electronAPI.startSpeechRecognition();
-            } catch (err) {
-              console.error("Error restarting speech recognition:", err);
-              setError(`Failed to restart: ${err.message}`);
-            }
-          }, 200);
-        } else {
-          // Update state and ref immediately
-          setUseMicrophone(newMicState);
-          useMicrophoneRef.current = newMicState; // Update ref directly for immediate effect
-          setError(null);
-          
-          console.log(`Microphone state directly updated to: ${newMicState}`);
-          
-          // Now restart with new settings
-          setTimeout(async () => {
-            try {
-              await window.electronAPI.startSpeechRecognition();
-            } catch (err) {
-              console.error("Error restarting speech recognition:", err);
-              setError(`Failed to restart: ${err.message}`);
-            }
-          }, 300); // Slightly longer timeout to ensure cleanup is complete
-        }
-      } else {
-        // Just toggle the state when not listening
-        // Prevent toggling off both sources
-        if (newMicState === false && !useSystemAudioRef.current) {
-          setError("At least one audio source must be enabled.");
-          // Don't change the state
-        } else {
-          // Update state and ref immediately
-          setUseMicrophone(newMicState);
-          useMicrophoneRef.current = newMicState; // Update ref directly for immediate effect
-          setError(null);
-        }
-      }
-    } catch (err) {
-      console.error("Error toggling microphone:", err);
-      setError(`Failed to toggle microphone: ${err.message}`);
+  const toggleMicrophone = () => {
+    if (isListening) {
+      setError('Please stop listening before changing audio sources.');
+      return;
     }
+    setUseMicrophone(!useMicrophone);
   };
   
-  const toggleSystemAudio = async () => {
-    try {
-      const newSystemAudioState = !useSystemAudioRef.current;
-      console.log(`Toggling system audio from ${useSystemAudioRef.current} to ${newSystemAudioState}`);
-      
-      if (isListening) {
-        // When already listening, we need to stop and restart the audio capture
-        setError("Reconfiguring audio sources...");
-        await window.electronAPI.stopSpeechRecognition();
-        cleanupAudio();
-        
-        // Prevent toggling off both sources
-        if (newSystemAudioState === false && !useMicrophoneRef.current) {
-          setError("At least one audio source must be enabled. System audio will remain on.");
-          // Don't change the system audio state
-          
-          // Restart with current settings
-          setTimeout(async () => {
-            try {
-              await window.electronAPI.startSpeechRecognition();
-            } catch (err) {
-              console.error("Error restarting speech recognition:", err);
-              setError(`Failed to restart: ${err.message}`);
-            }
-          }, 200);
-        } else {
-          // Update state and ref immediately
-          setUseSystemAudio(newSystemAudioState);
-          useSystemAudioRef.current = newSystemAudioState; // Update ref directly for immediate effect
-          setError(null);
-          
-          console.log(`System audio state directly updated to: ${newSystemAudioState}`);
-          
-          // Now restart with new settings
-          setTimeout(async () => {
-            try {
-              await window.electronAPI.startSpeechRecognition();
-            } catch (err) {
-              console.error("Error restarting speech recognition:", err);
-              setError(`Failed to restart: ${err.message}`);
-            }
-          }, 300); // Slightly longer timeout to ensure cleanup is complete
-        }
-      } else {
-        // Just toggle the state when not listening
-        // Prevent toggling off both sources
-        if (newSystemAudioState === false && !useMicrophoneRef.current) {
-          setError("At least one audio source must be enabled.");
-          // Don't change the state
-        } else {
-          // Update state and ref immediately
-          setUseSystemAudio(newSystemAudioState);
-          useSystemAudioRef.current = newSystemAudioState; // Update ref directly for immediate effect
-          setError(null);
-        }
-      }
-    } catch (err) {
-      console.error("Error toggling system audio:", err);
-      setError(`Failed to toggle system audio: ${err.message}`);
+  const toggleSystemAudio = () => {
+    if (isListening) {
+      setError('Please stop listening before changing audio sources.');
+      return;
     }
+    setUseSystemAudio(!useSystemAudio);
   };
 
   return (
@@ -609,7 +430,7 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
         <button 
           onClick={toggleListening} 
           style={isListening ? micActiveButtonStyle : micButtonStyle}
-          disabled={(!!error && !isListening) || (!useMicrophoneRef.current && !useSystemAudioRef.current)}
+          disabled={(!!error && !isListening) || (!useMicrophone && !useSystemAudio)}
         >
           {isListening ? (
             <>
@@ -633,16 +454,16 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       {/* Audio source toggles */}
       <div style={toggleContainerStyle}>
         <div style={toggleStyle} onClick={toggleMicrophone}>
-          <div style={useMicrophoneRef.current ? toggleButtonActiveStyle : toggleButtonStyle}>
-            <div style={useMicrophoneRef.current ? toggleHandleActiveStyle : toggleHandleStyle} />
+          <div style={useMicrophone ? toggleButtonActiveStyle : toggleButtonStyle}>
+            <div style={useMicrophone ? toggleHandleActiveStyle : toggleHandleStyle} />
           </div>
           <Mic size={18} />
           <span style={labelStyle}>Microphone</span>
         </div>
         
         <div style={toggleStyle} onClick={toggleSystemAudio}>
-          <div style={useSystemAudioRef.current ? toggleButtonActiveStyle : toggleButtonStyle}>
-            <div style={useSystemAudioRef.current ? toggleHandleActiveStyle : toggleHandleStyle} />
+          <div style={useSystemAudio ? toggleButtonActiveStyle : toggleButtonStyle}>
+            <div style={useSystemAudio ? toggleHandleActiveStyle : toggleHandleStyle} />
           </div>
           <Headphones size={18} />
           <span style={labelStyle}>System Audio</span>
