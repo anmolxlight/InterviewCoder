@@ -13,7 +13,7 @@ InterviewCoder is an AI-powered interview preparation assistant designed specifi
 - **Multilingual Support**: Handles code-switching and multiple languages in real-time  
 - **Screenshot Analysis**: Capture and analyze coding problems from your screen  
 - **AI-Powered Solution Generation**: Get optimal coding solutions with detailed explanations  
-- **First-Person Behavioral Responses**: Receive authentic, well-crafted responses to behavioral questions from an AI that speaks in your voice  
+- **First-Person Behavioral Responses**: Receive authentic, well-crafted responses to behavioral questions.
 - **Code Debugging Assistance**: Get help fixing errors in your code with detailed explanations  
 
 ## Installation
