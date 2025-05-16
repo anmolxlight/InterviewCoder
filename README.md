@@ -2,7 +2,7 @@
 
 InterviewCoder is an AI-powered interview preparation assistant designed specifically for software engineers. It combines speech recognition, screenshot analysis, and state-of-the-art language models to provide an interactive coding interview simulation experience.
 
-![InterviewCoder](assets/icons/win/icon.ico)
+![InterviewCoder](assets/icons/win/interviewcoderico.ico)
 
 ## Key Features
 
