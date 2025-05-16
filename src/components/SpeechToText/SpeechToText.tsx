@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Mic, MicOff, Settings, Speaker, Headphones, RefreshCcw } from 'lucide-react';
 
-// Updated styles for dark transparent theme
+// Create a fully dynamic container without any height constraints
 const containerStyle = {
   display: 'flex',
   flexDirection: 'column' as const,
@@ -9,7 +9,13 @@ const containerStyle = {
   padding: '1rem',
   border: '1px solid rgba(226, 232, 240, 0.4)',
   borderRadius: '0.5rem',
-  backgroundColor: 'rgba(15, 23, 42, 0.75)'  // Darker background with higher opacity
+  backgroundColor: 'rgba(15, 23, 42, 0.75)', 
+  width: '100%',
+  minWidth: '300px',
+  height: 'fit-content',
+  maxHeight: 'none',
+  overflow: 'visible',
+  position: 'static' as const,
 };
 
 const buttonStyle = {
@@ -27,67 +33,78 @@ const buttonStyle = {
 
 const micButtonStyle = {
   ...buttonStyle,
-  backgroundColor: 'rgba(37, 99, 235, 0.85)', // Brighter blue with higher opacity
+  backgroundColor: 'rgba(37, 99, 235, 0.85)',
   color: 'white'
 };
 
 const micActiveButtonStyle = {
   ...micButtonStyle,
-  backgroundColor: 'rgba(34, 197, 94, 0.85)', // Brighter green with higher opacity
+  backgroundColor: 'rgba(34, 197, 94, 0.85)',
 };
 
 const settingsButtonStyle = {
   ...buttonStyle,
-  backgroundColor: 'rgba(71, 85, 105, 0.75)', // Darker background with higher opacity
+  backgroundColor: 'rgba(71, 85, 105, 0.75)',
   color: 'white',
 };
 
+// Dynamic content containers with absolutely no height limits or scrolling
 const transcriptContainerStyle = {
   marginTop: '1rem',
-  padding: '0.5rem',
+  padding: '0.75rem',
   border: '1px solid rgba(226, 232, 240, 0.4)',
   borderRadius: '0.375rem',
-  backgroundColor: 'rgba(30, 41, 59, 0.8)', // Dark slate with higher opacity
-  color: 'rgba(255, 255, 255, 0.95)', // Almost white text
-  minHeight: '3rem',
-  maxHeight: '8rem',
-  overflowY: 'auto' as const
+  backgroundColor: 'rgba(30, 41, 59, 0.8)',
+  color: 'rgba(255, 255, 255, 0.95)',
+  width: '100%',
+  height: 'fit-content',
+  maxHeight: 'none',
+  overflow: 'visible',
+  whiteSpace: 'pre-wrap' as const,
+  wordBreak: 'break-word' as const,
+  boxSizing: 'border-box' as const,
+  position: 'static' as const,
 };
 
 const responseContainerStyle = {
   marginTop: '1rem',
-  padding: '0.5rem',
+  padding: '0.75rem',
   border: '1px solid rgba(34, 197, 94, 0.4)',
   borderRadius: '0.375rem',
-  backgroundColor: 'rgba(20, 83, 45, 0.75)', // Dark green with higher opacity
-  color: 'rgba(255, 255, 255, 0.95)', // Almost white text
-  minHeight: '3rem',
-  maxHeight: '8rem',
-  overflowY: 'auto' as const
+  backgroundColor: 'rgba(20, 83, 45, 0.75)',
+  color: 'rgba(255, 255, 255, 0.95)',
+  width: '100%',
+  height: 'fit-content',
+  maxHeight: 'none',
+  overflow: 'visible',
+  whiteSpace: 'pre-wrap' as const,
+  wordBreak: 'break-word' as const,
+  boxSizing: 'border-box' as const,
+  position: 'static' as const,
 };
 
-// Add styles for different speakers
+// Styles for different speakers
 const interviewerTextStyle = {
-  color: 'rgba(14, 165, 233, 0.95)', // Light blue for interviewer 
+  color: 'rgba(14, 165, 233, 0.95)',
   fontWeight: 600 as const,
   marginBottom: '0.25rem'
 };
 
 const userTextStyle = {
-  color: 'rgba(34, 197, 94, 0.95)', // Light green for user/candidate
+  color: 'rgba(34, 197, 94, 0.95)',
   fontWeight: 600 as const,
   marginBottom: '0.25rem'
 };
 
-// Update the error and success styles
+// Error and processing styles
 const errorStyle = {
-  color: 'rgba(239, 68, 68, 0.95)', // Brighter red with high opacity
+  color: 'rgba(239, 68, 68, 0.95)',
   marginTop: '0.5rem',
   fontWeight: 500
 };
 
 const processingStyle = {
-  color: 'rgba(59, 130, 246, 0.95)', // Bright blue with high opacity
+  color: 'rgba(59, 130, 246, 0.95)',
   marginTop: '0.5rem',
   fontWeight: 500
 };
@@ -95,10 +112,10 @@ const processingStyle = {
 const labelStyle = {
   fontWeight: 500,
   marginBottom: '0.25rem',
-  color: 'rgba(255, 255, 255, 0.9)' // Almost white text
+  color: 'rgba(255, 255, 255, 0.9)'
 };
 
-// New toggle style for audio source selection
+// Toggle styles
 const toggleContainerStyle = {
   display: 'flex',
   gap: '0.75rem',
@@ -142,6 +159,17 @@ const toggleHandleActiveStyle = {
   transform: 'translateX(1.25rem)'
 };
 
+// Create a wrapper style that ensures full expansion
+const wrapperStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  height: 'fit-content',
+  maxHeight: 'none',
+  overflow: 'visible',
+  width: '100%',
+  position: 'static' as const,
+};
+
 interface SpeechToTextProps {
   onSettingsOpen: () => void;
 }
@@ -152,6 +180,9 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
   const [response, setResponse] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Track only the current interviewer question
+  const [currentQuestion, setCurrentQuestion] = useState('');
   
   // Audio source toggles
   const [useMicrophone, setUseMicrophone] = useState(true);
@@ -225,6 +256,21 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       setTranscript(text);
       lastTranscriptRef.current = text;
       
+      // Extract interviewer's question if present
+      if (text.includes('Interviewer:')) {
+        const lines = text.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('Interviewer:')) {
+            // Extract only the most recent interviewer question
+            const question = line.split('Interviewer:')[1]?.trim();
+            if (question) {
+              setCurrentQuestion(question);
+            }
+            break; // Only take the first interviewer line
+          }
+        }
+      }
+      
       // Reset processing timer on new transcription
       if (processingTimerRef.current) {
         clearTimeout(processingTimerRef.current);
@@ -234,11 +280,13 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       processingTimerRef.current = setTimeout(() => {
         if (text.trim() !== '') {
           // For diarized transcripts, we only auto-process when we receive a transcript
-          // from the backend that doesn't include speaker information
-          
-          // Check if the transcript contains speaker markers
-          if (!text.includes('Interviewer:') && !text.includes('You:')) {
-            processTranscript(text);
+          // with an interviewer question
+          if (text.includes('Interviewer:')) {
+            // Extract interviewer text for processing
+            const interviewerText = extractInterviewerText(text);
+            if (interviewerText) {
+              processTranscript(interviewerText);
+            }
           }
         }
       }, 1500);
@@ -267,6 +315,19 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       cleanupAudio();
     };
   }, []);
+  
+  // Helper function to extract interviewer text
+  const extractInterviewerText = (text: string): string => {
+    if (!text.includes('Interviewer:')) return '';
+    
+    const lines = text.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('Interviewer:')) {
+        return line.split('Interviewer:')[1]?.trim() || '';
+      }
+    }
+    return '';
+  };
   
   // Process transcript automatically when user stops speaking
   const processTranscript = async (text: string) => {
@@ -413,9 +474,11 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       if (isListening) {
         // If we're stopping, process any final transcript
         if (lastTranscriptRef.current && lastTranscriptRef.current.trim() !== '') {
-          // For diarized transcripts, we only process when the transcript doesn't have speaker markers
-          if (!lastTranscriptRef.current.includes('Interviewer:') && !lastTranscriptRef.current.includes('You:')) {
-            processTranscript(lastTranscriptRef.current);
+          if (lastTranscriptRef.current.includes('Interviewer:')) {
+            const interviewerText = extractInterviewerText(lastTranscriptRef.current);
+            if (interviewerText) {
+              processTranscript(interviewerText);
+            }
           }
         }
         
@@ -424,6 +487,7 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       } else {
         // Clear previous transcript and response when starting a new session
         setTranscript('');
+        setCurrentQuestion('');
         setResponse('');
         setError(null);
         setIsProcessing(false);
@@ -455,143 +519,121 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
     setUseSystemAudio(!useSystemAudio);
   };
 
-  // Format transcript for display with speaker styles
+  // Format transcript to only show the current interviewer question
   const renderFormattedTranscript = () => {
-    if (!transcript) {
-      return 'No transcript yet. Click "Start Listening" to begin.';
-    }
-
-    // Check if the transcript contains speaker labels
-    if (transcript.includes('Interviewer:') || transcript.includes('You:')) {
-      // Split by new lines to separate speaker segments
-      const lines = transcript.split('\n');
-      
-      return (
-        <div>
-          {lines.map((line, index) => {
-            if (line.startsWith('Interviewer:')) {
-              return (
-                <div key={index}>
-                  <span style={interviewerTextStyle}>
-                    {line.split('Interviewer:')[0]}Interviewer:
-                  </span>
-                  {line.split('Interviewer:')[1]}
-                </div>
-              );
-            } else if (line.startsWith('You:')) {
-              return (
-                <div key={index}>
-                  <span style={userTextStyle}>{line.split('You:')[0]}You:</span>
-                  {line.split('You:')[1]}
-                </div>
-              );
-            } else {
-              return <div key={index}>{line}</div>;
-            }
-          })}
-        </div>
-      );
+    if (!currentQuestion) {
+      return 'No questions yet. Click "Start Listening" to begin.';
     }
     
-    // If no speaker labels, just return the raw transcript
-    return transcript;
+    return (
+      <div>
+        <span style={interviewerTextStyle}>Interviewer: </span>
+        {currentQuestion}
+      </div>
+    );
   };
 
   return (
-    <div style={containerStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={labelStyle}>Speech Recognition</div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button
-            onClick={() => {
-              window.electronAPI.clearConversationHistory()
-                .then(() => {
-                  // Show brief notification that history was cleared
-                  setResponse('Conversation history cleared.');
-                  setTimeout(() => setResponse(''), 2000);
-                })
-                .catch((err: unknown) => {
-                  console.error('Failed to clear conversation history:', err);
-                });
-            }}
-            style={settingsButtonStyle}
-            title="Clear conversation history"
-          >
-            <RefreshCcw size={16} />
-            <span>Clear History</span>
-          </button>
-          <button onClick={onSettingsOpen} style={settingsButtonStyle}>
-            <Settings size={16} />
-            <span>Settings</span>
-          </button>
-        </div>
-      </div>
-      
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <button 
-          onClick={toggleListening} 
-          style={isListening ? micActiveButtonStyle : micButtonStyle}
-          disabled={(!!error && !isListening) || (!useMicrophone && !useSystemAudio)}
-        >
-          {isListening ? (
-            <>
-              <MicOff size={18} />
-              Stop Listening
-            </>
-          ) : (
-            <>
-              <Mic size={18} />
-              Start Listening
-            </>
-          )}
-        </button>
-      </div>
-      
-      {/* Audio source toggles */}
-      <div style={toggleContainerStyle}>
-        <div style={toggleStyle} onClick={toggleMicrophone}>
-          <div style={useMicrophone ? toggleButtonActiveStyle : toggleButtonStyle}>
-            <div style={useMicrophone ? toggleHandleActiveStyle : toggleHandleStyle} />
+    <div style={wrapperStyle}>
+      <div style={containerStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={labelStyle}>Speech Recognition</div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              onClick={() => {
+                window.electronAPI.clearConversationHistory()
+                  .then(() => {
+                    // Show brief notification that history was cleared
+                    setResponse('Conversation history cleared.');
+                    setTimeout(() => setResponse(''), 2000);
+                  })
+                  .catch((err: unknown) => {
+                    console.error('Failed to clear conversation history:', err);
+                  });
+              }}
+              style={settingsButtonStyle}
+              title="Clear conversation history"
+            >
+              <RefreshCcw size={16} />
+              <span>Clear History</span>
+            </button>
+            <button onClick={onSettingsOpen} style={settingsButtonStyle}>
+              <Settings size={16} />
+              <span>Settings</span>
+            </button>
           </div>
-          <Mic size={18} />
-          <span style={labelStyle}>Microphone</span>
         </div>
         
-        <div style={toggleStyle} onClick={toggleSystemAudio}>
-          <div style={useSystemAudio ? toggleButtonActiveStyle : toggleButtonStyle}>
-            <div style={useSystemAudio ? toggleHandleActiveStyle : toggleHandleStyle} />
-          </div>
-          <Headphones size={18} />
-          <span style={labelStyle}>System Audio</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <button 
+            onClick={toggleListening} 
+            style={isListening ? micActiveButtonStyle : micButtonStyle}
+            disabled={(!!error && !isListening) || (!useMicrophone && !useSystemAudio)}
+          >
+            {isListening ? (
+              <>
+                <MicOff size={18} />
+                Stop Listening
+              </>
+            ) : (
+              <>
+                <Mic size={18} />
+                Start Listening
+              </>
+            )}
+          </button>
         </div>
-      </div>
-      
-      {error && (
-        <div style={errorStyle}>
-          Error: {error}
-        </div>
-      )}
-      
-      <div>
-        <div style={labelStyle}>Transcript:</div>
-        <div style={transcriptContainerStyle}>
-          {renderFormattedTranscript()}
-          {isProcessing && (
-            <div style={processingStyle}>
-              Processing transcript...
+        
+        {/* Audio source toggles */}
+        <div style={toggleContainerStyle}>
+          <div style={toggleStyle} onClick={toggleMicrophone}>
+            <div style={useMicrophone ? toggleButtonActiveStyle : toggleButtonStyle}>
+              <div style={useMicrophone ? toggleHandleActiveStyle : toggleHandleStyle} />
             </div>
-          )}
-        </div>
-      </div>
-      
-      {response && (
-        <div>
-          <div style={labelStyle}>AI Response:</div>
-          <div style={responseContainerStyle}>
-            {response}
+            <Mic size={18} />
+            <span style={labelStyle}>Microphone</span>
+          </div>
+          
+          <div style={toggleStyle} onClick={toggleSystemAudio}>
+            <div style={useSystemAudio ? toggleButtonActiveStyle : toggleButtonStyle}>
+              <div style={useSystemAudio ? toggleHandleActiveStyle : toggleHandleStyle} />
+            </div>
+            <Headphones size={18} />
+            <span style={labelStyle}>System Audio</span>
           </div>
         </div>
-      )}
+        
+        {error && (
+          <div style={errorStyle}>
+            Error: {error}
+          </div>
+        )}
+        
+        {/* Only show the current interviewer question */}
+        {currentQuestion && (
+          <div style={{ width: '100%', overflow: 'visible' }}>
+            <div style={labelStyle}>Current Question:</div>
+            <div style={transcriptContainerStyle}>
+              {renderFormattedTranscript()}
+              {isProcessing && (
+                <div style={processingStyle}>
+                  Processing question...
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        
+        {/* Only show current response in fully dynamic container */}
+        {response && (
+          <div style={{ width: '100%', overflow: 'visible' }}>
+            <div style={labelStyle}>Answer:</div>
+            <div style={responseContainerStyle}>
+              {response}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 } 
