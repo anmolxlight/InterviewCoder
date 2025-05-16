@@ -9,6 +9,13 @@ interface SpeechToTextConfig {
   isEnabled: boolean;
 }
 
+// Define a type for transcript data that includes speaker information
+interface TranscriptData {
+  text: string;
+  speaker?: number | null;
+  isFinal: boolean;
+}
+
 export class SpeechToTextHelper extends EventEmitter {
   private deepgramClient: ReturnType<typeof createClient> | null = null;
   private isListening: boolean = false;
@@ -121,11 +128,12 @@ export class SpeechToTextHelper extends EventEmitter {
       this.liveTcp = this.deepgramClient.listen.live({
         model: 'nova-3',
         smart_format: true,
-        language: 'en',
+        language: 'multi',
         encoding: 'linear16',
         sample_rate: 16000,
         channels: 1,
         interim_results: true,
+        diarize: true,     // Enable speaker diarization for meetings
       });
       
       // Set up event handlers
@@ -141,19 +149,85 @@ export class SpeechToTextHelper extends EventEmitter {
       
       this.liveTcp.on(LiveTranscriptionEvents.Transcript, (data: any) => {
         // Handle incoming transcript
-        if (data.is_final && data.channel && data.channel.alternatives && data.channel.alternatives[0]) {
-          const transcript = data.channel.alternatives[0].transcript;
+        if (data.channel && data.channel.alternatives && data.channel.alternatives[0]) {
+          const transcriptResult = data.channel.alternatives[0];
+          const isFinal = data.is_final;
           
-          if (transcript && transcript.trim() !== '') {
-            console.log('Transcription received:', transcript);
+          // Check if there are any words with diarization information
+          const hasDiarization = transcriptResult.words && 
+                                transcriptResult.words.length > 0 && 
+                                transcriptResult.words.some((w: any) => w.speaker !== undefined);
+          
+          if (transcriptResult.transcript && transcriptResult.transcript.trim() !== '') {
+            console.log('Transcription received:', transcriptResult.transcript);
             
-            // Send transcript to renderer process
-            if (this.mainWindow) {
-              this.mainWindow.webContents.send('speech-transcription', transcript);
+            // If we have diarization information, process it
+            if (hasDiarization && transcriptResult.words && transcriptResult.words.length > 0) {
+              // Group words by speaker
+              const speakerSegments: Array<{speaker: number|null, text: string}> = [];
+              let currentSpeaker: number|null = null;
+              let currentText = '';
+              
+              for (const word of transcriptResult.words) {
+                const speaker = word.speaker !== undefined ? word.speaker : null;
+                
+                // If speaker changes, start a new segment
+                if (speaker !== currentSpeaker && currentText.trim() !== '') {
+                  speakerSegments.push({
+                    speaker: currentSpeaker,
+                    text: currentText.trim()
+                  });
+                  currentText = '';
+                }
+                
+                currentSpeaker = speaker;
+                currentText += ' ' + word.word;
+              }
+              
+              // Add the final segment
+              if (currentText.trim() !== '') {
+                speakerSegments.push({
+                  speaker: currentSpeaker,
+                  text: currentText.trim()
+                });
+              }
+              
+              // Format transcript with speaker information
+              let formattedTranscript = '';
+              speakerSegments.forEach(segment => {
+                // Use "Interviewer" for speaker 0 and "You" for speaker 1
+                const speakerName = segment.speaker === 0 ? 'Interviewer' : 'You';
+                formattedTranscript += `${speakerName}: ${segment.text}\n`;
+              });
+              
+              // Send formatted transcript to renderer process
+              if (this.mainWindow) {
+                this.mainWindow.webContents.send('speech-transcription', formattedTranscript.trim());
+              }
+              
+              // Only process interviewer's questions when final
+              if (isFinal) {
+                // Find interviewer segments (speaker 0)
+                const interviewerSegments = speakerSegments.filter(s => s.speaker === 0);
+                
+                if (interviewerSegments.length > 0) {
+                  const interviewerText = interviewerSegments.map(s => s.text).join(' ');
+                  // Emit event for other handlers, specifically for AI processing
+                  this.emit('transcription', interviewerText);
+                }
+              }
+            } else {
+              // No diarization information, fall back to simple transcript
+              // Send transcript to renderer process
+              if (this.mainWindow) {
+                this.mainWindow.webContents.send('speech-transcription', transcriptResult.transcript);
+              }
+              
+              // Emit event for other handlers
+              if (isFinal) {
+                this.emit('transcription', transcriptResult.transcript);
+              }
             }
-            
-            // Emit event for other handlers
-            this.emit('transcription', transcript);
           }
         }
       });

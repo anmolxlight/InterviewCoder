@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Mic, MicOff, Settings, Speaker, Headphones } from 'lucide-react';
+import { Mic, MicOff, Settings, Speaker, Headphones, RefreshCcw } from 'lucide-react';
 
 // Updated styles for dark transparent theme
 const containerStyle = {
@@ -64,6 +64,19 @@ const responseContainerStyle = {
   minHeight: '3rem',
   maxHeight: '8rem',
   overflowY: 'auto' as const
+};
+
+// Add styles for different speakers
+const interviewerTextStyle = {
+  color: 'rgba(14, 165, 233, 0.95)', // Light blue for interviewer 
+  fontWeight: 600 as const,
+  marginBottom: '0.25rem'
+};
+
+const userTextStyle = {
+  color: 'rgba(34, 197, 94, 0.95)', // Light green for user/candidate
+  fontWeight: 600 as const,
+  marginBottom: '0.25rem'
 };
 
 // Update the error and success styles
@@ -202,13 +215,13 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       cleanupAudio();
     });
 
-    const unsubscribeError = window.electronAPI.onSpeechRecognitionError((errorMsg) => {
+    const unsubscribeError = window.electronAPI.onSpeechRecognitionError((errorMsg: string) => {
       setIsListening(false);
       setError(errorMsg);
       cleanupAudio();
     });
 
-    const unsubscribeTranscription = window.electronAPI.onSpeechTranscription((text) => {
+    const unsubscribeTranscription = window.electronAPI.onSpeechTranscription((text: string) => {
       setTranscript(text);
       lastTranscriptRef.current = text;
       
@@ -220,17 +233,23 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       // Start a new timer - if no new transcription after 1.5 seconds, process it
       processingTimerRef.current = setTimeout(() => {
         if (text.trim() !== '') {
-          processTranscript(text);
+          // For diarized transcripts, we only auto-process when we receive a transcript
+          // from the backend that doesn't include speaker information
+          
+          // Check if the transcript contains speaker markers
+          if (!text.includes('Interviewer:') && !text.includes('You:')) {
+            processTranscript(text);
+          }
         }
       }, 1500);
     });
 
-    const unsubscribeAiResponse = window.electronAPI.onAiResponse((aiResponse) => {
+    const unsubscribeAiResponse = window.electronAPI.onAiResponse((aiResponse: string) => {
       setResponse(aiResponse);
       setIsProcessing(false);
     });
 
-    const unsubscribeAiError = window.electronAPI.onAiResponseError((errorMsg) => {
+    const unsubscribeAiError = window.electronAPI.onAiResponseError((errorMsg: string) => {
       setError(errorMsg);
       setIsProcessing(false);
     });
@@ -262,9 +281,10 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
         setError('Failed to process transcript');
         setIsProcessing(false);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error processing transcript:', err);
-      setError(err.message || 'Failed to process transcript');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to process transcript';
+      setError(errorMessage);
       setIsProcessing(false);
     }
   };
@@ -297,10 +317,11 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
           micSourceNode.connect(mixerNode);
           hasAudioSource = true;
           console.log('Microphone capture enabled');
-        } catch (micErr) {
+        } catch (micErr: unknown) {
           console.error('Microphone access error:', micErr);
           if (!useSystemAudio) {
-            throw new Error(`Microphone access error: ${micErr.message}`);
+            const errorMessage = micErr instanceof Error ? micErr.message : 'Unknown microphone access error';
+            throw new Error(`Microphone access error: ${errorMessage}`);
           }
         }
       }
@@ -315,10 +336,14 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
             // Use the returned source ID to capture the system audio
             const systemStream = await navigator.mediaDevices.getUserMedia({
               audio: {
-                mandatory: {
-                  chromeMediaSource: 'desktop',
-                  chromeMediaSourceId: sourceId
-                } as any
+                // For Electron-specific constraints, we need to use proper typing
+                // Define an interface that extends MediaTrackConstraints for the Electron-specific properties
+                ...(({
+                  mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: sourceId
+                  }
+                } as unknown) as MediaTrackConstraints)
               },
               video: false
             });
@@ -332,10 +357,11 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
           } else {
             throw new Error('Failed to get system audio source');
           }
-        } catch (sysErr) {
+        } catch (sysErr: unknown) {
           console.error('System audio access error:', sysErr);
           if (!useMicrophone || !mediaStreamRef.current) {
-            throw new Error(`System audio access error: ${sysErr.message}`);
+            const errorMessage = sysErr instanceof Error ? sysErr.message : 'Unknown system audio access error';
+            throw new Error(`System audio access error: ${errorMessage}`);
           }
         }
       }
@@ -367,9 +393,10 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       processorNode.connect(audioContext.destination);
       
       console.log('Audio capture started');
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error starting audio capture:', err);
-      setError(`Audio access error: ${err.message}`);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown audio access error';
+      setError(`Audio access error: ${errorMessage}`);
       setIsListening(false);
       await window.electronAPI.stopSpeechRecognition();
     }
@@ -386,7 +413,10 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       if (isListening) {
         // If we're stopping, process any final transcript
         if (lastTranscriptRef.current && lastTranscriptRef.current.trim() !== '') {
-          processTranscript(lastTranscriptRef.current);
+          // For diarized transcripts, we only process when the transcript doesn't have speaker markers
+          if (!lastTranscriptRef.current.includes('Interviewer:') && !lastTranscriptRef.current.includes('You:')) {
+            processTranscript(lastTranscriptRef.current);
+          }
         }
         
         await window.electronAPI.stopSpeechRecognition();
@@ -401,9 +431,10 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
         await window.electronAPI.startSpeechRecognition();
         // Audio capture will be started when we receive the onSpeechRecognitionStarted event
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error toggling speech recognition:', err);
-      setError(err.message || 'Failed to toggle speech recognition');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMessage || 'Failed to toggle speech recognition');
     }
   };
   
@@ -424,8 +455,78 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
     setUseSystemAudio(!useSystemAudio);
   };
 
+  // Format transcript for display with speaker styles
+  const renderFormattedTranscript = () => {
+    if (!transcript) {
+      return 'No transcript yet. Click "Start Listening" to begin.';
+    }
+
+    // Check if the transcript contains speaker labels
+    if (transcript.includes('Interviewer:') || transcript.includes('You:')) {
+      // Split by new lines to separate speaker segments
+      const lines = transcript.split('\n');
+      
+      return (
+        <div>
+          {lines.map((line, index) => {
+            if (line.startsWith('Interviewer:')) {
+              return (
+                <div key={index}>
+                  <span style={interviewerTextStyle}>
+                    {line.split('Interviewer:')[0]}Interviewer:
+                  </span>
+                  {line.split('Interviewer:')[1]}
+                </div>
+              );
+            } else if (line.startsWith('You:')) {
+              return (
+                <div key={index}>
+                  <span style={userTextStyle}>{line.split('You:')[0]}You:</span>
+                  {line.split('You:')[1]}
+                </div>
+              );
+            } else {
+              return <div key={index}>{line}</div>;
+            }
+          })}
+        </div>
+      );
+    }
+    
+    // If no speaker labels, just return the raw transcript
+    return transcript;
+  };
+
   return (
     <div style={containerStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={labelStyle}>Speech Recognition</div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            onClick={() => {
+              window.electronAPI.clearConversationHistory()
+                .then(() => {
+                  // Show brief notification that history was cleared
+                  setResponse('Conversation history cleared.');
+                  setTimeout(() => setResponse(''), 2000);
+                })
+                .catch((err: unknown) => {
+                  console.error('Failed to clear conversation history:', err);
+                });
+            }}
+            style={settingsButtonStyle}
+            title="Clear conversation history"
+          >
+            <RefreshCcw size={16} />
+            <span>Clear History</span>
+          </button>
+          <button onClick={onSettingsOpen} style={settingsButtonStyle}>
+            <Settings size={16} />
+            <span>Settings</span>
+          </button>
+        </div>
+      </div>
+      
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <button 
           onClick={toggleListening} 
@@ -443,11 +544,6 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
               Start Listening
             </>
           )}
-        </button>
-        
-        <button onClick={onSettingsOpen} style={settingsButtonStyle}>
-          <Settings size={18} />
-          Settings
         </button>
       </div>
       
@@ -479,7 +575,7 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       <div>
         <div style={labelStyle}>Transcript:</div>
         <div style={transcriptContainerStyle}>
-          {transcript || 'No transcript yet. Click "Start Listening" to begin.'}
+          {renderFormattedTranscript()}
           {isProcessing && (
             <div style={processingStyle}>
               Processing transcript...

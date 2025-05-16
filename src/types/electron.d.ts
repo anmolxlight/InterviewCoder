@@ -80,6 +80,12 @@ export interface ElectronAPI {
   
   // System audio capture
   captureSystemAudio: () => Promise<string>
+  
+  // Conversation history management
+  clearConversationHistory: () => Promise<{ success: boolean; error?: string }>
+  getConversationHistory: () => Promise<{ success: boolean; history: Array<{role: string, content: string}>; error?: string }>
+  saveConversationHistory: () => Promise<{ success: boolean; error?: string }>
+  loadConversationHistory: () => Promise<{ success: boolean; error?: string }>
 }
 
 declare global {

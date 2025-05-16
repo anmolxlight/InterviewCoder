@@ -307,6 +307,19 @@ const electronAPI = {
   captureSystemAudio: async () => {
     return await ipcRenderer.invoke("capture-system-audio");
   },
+  // Conversation history management methods
+  clearConversationHistory: async () => {
+    return await ipcRenderer.invoke("clear-conversation-history");
+  },
+  getConversationHistory: async () => {
+    return await ipcRenderer.invoke("get-conversation-history");
+  },
+  saveConversationHistory: async () => {
+    return await ipcRenderer.invoke("save-conversation-history");
+  },
+  loadConversationHistory: async () => {
+    return await ipcRenderer.invoke("load-conversation-history");
+  },
 }
 
 // Before exposing the API

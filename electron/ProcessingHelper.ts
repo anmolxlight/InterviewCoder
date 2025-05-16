@@ -7,6 +7,7 @@ import * as axios from "axios"
 import { app, BrowserWindow, dialog } from "electron"
 import { OpenAI } from "openai"
 import { configHelper } from "./ConfigHelper"
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -40,6 +41,10 @@ export class ProcessingHelper {
   // AbortControllers for API requests
   private currentProcessingAbortController: AbortController | null = null
   private currentExtraProcessingAbortController: AbortController | null = null
+  
+  // Add conversation history
+  private conversationHistory: Array<{role: string, content: string}> = [];
+  private readonly maxHistoryLength: number = 10; // Keep last 10 messages plus system prompt
 
   constructor(deps: IProcessingHelperDeps) {
     this.deps = deps
@@ -461,7 +466,7 @@ export class ProcessingHelper {
         }
 
         // Use OpenAI for processing
-        const messages = [
+        const messages: ChatCompletionMessageParam[] = [
           {
             role: "system" as const, 
             content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
@@ -1112,6 +1117,10 @@ If you include code examples, use proper markdown code blocks with language spec
       throw new Error('Empty transcript provided');
     }
     
+    // Process the transcript
+    // For diarized transcripts, we'll only get interviewer questions here
+    // so we can process them directly
+    
     // Load config to determine which AI provider to use
     const config = configHelper.loadConfig();
     
@@ -1183,22 +1192,61 @@ If you include code examples, use proper markdown code blocks with language spec
 - If the question is ambiguous, ask for clarification or make reasonable assumptions (e.g., assume Python for coding unless specified).
 - Avoid overly technical jargon in behavioral responses unless relevant to the role.
 - Do not include personal anecdotes unless prompted, but structure behavioral answers to feel personal and relatable.
-- If asked about weaknesses or failures, frame them positively, focusing on lessons learned and growth.`;
+- If asked about weaknesses or failures, frame them positively, focusing on lessons learned and growth.
+
+IMPORTANT: The transcript you are receiving is from an interviewer. Always answer as the candidate (the user).`;
+      
+      // Prepare the messages array with system prompt and conversation history
+      const messages: ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemPrompt },
+      ];
+      
+      // Add conversation history if available
+      if (this.conversationHistory.length > 0) {
+        // Convert history items to proper ChatCompletionMessageParam format
+        const historyMessages = this.conversationHistory.map(msg => {
+          return { 
+            role: msg.role as 'user' | 'assistant' | 'system', 
+            content: msg.content 
+          } as ChatCompletionMessageParam;
+        });
+        messages.push(...historyMessages);
+      }
+      
+      // Add the current user message
+      messages.push({ role: 'user', content: transcript });
       
       // Make the API call
       const response = await this.openaiClient.chat.completions.create({
         model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: transcript }
-        ],
+        messages: messages,
         temperature: 0.7,
         max_tokens: 1000,
       }, { signal });
       
       // Extract the response content
       if (response.choices && response.choices.length > 0) {
-        return response.choices[0].message.content || 'No response generated';
+        const assistantResponse = response.choices[0].message.content || 'No response generated';
+        
+        // Update conversation history
+        this.conversationHistory.push(
+          { role: 'user', content: transcript },
+          { role: 'assistant', content: assistantResponse }
+        );
+        
+        // Trim history if needed, but keep the most recent exchanges
+        if (this.conversationHistory.length > this.maxHistoryLength * 2) { // *2 because each exchange is 2 messages
+          // Keep most recent conversations but remove older ones (except earliest context if any)
+          this.conversationHistory = [
+            ...this.conversationHistory.slice(0, 2), // Keep first exchange if available
+            ...this.conversationHistory.slice(-this.maxHistoryLength * 2 + 2) // And most recent ones
+          ];
+        }
+        
+        // Save conversation history after each interaction
+        this.saveConversationHistory();
+        
+        return assistantResponse;
       } else {
         return 'No response generated';
       }
@@ -1253,15 +1301,33 @@ If you include code examples, use proper markdown code blocks with language spec
 - If the question is ambiguous, ask for clarification or make reasonable assumptions (e.g., assume Python for coding unless specified).
 - Avoid overly technical jargon in behavioral responses unless relevant to the role.
 - Do not include personal anecdotes unless prompted, but structure behavioral answers to feel personal and relatable.
-- If asked about weaknesses or failures, frame them positively, focusing on lessons learned and growth.`;
+- If asked about weaknesses or failures, frame them positively, focusing on lessons learned and growth.
+
+IMPORTANT: The transcript you are receiving is from an interviewer. Always answer as the candidate (the user).`;
       
-      // Create a message including system-like instruction
+      // Prepare conversation history for Gemini
+      let promptWithHistory = systemInstruction + "\n\n";
+      
+      // Add conversation history if available
+      if (this.conversationHistory.length > 0) {
+        promptWithHistory += "Our conversation so far:\n\n";
+        
+        this.conversationHistory.forEach(message => {
+          const role = message.role === 'user' ? 'Interviewer' : 'Candidate';
+          promptWithHistory += `${role}: ${message.content}\n\n`;
+        });
+      }
+      
+      // Add the current query
+      promptWithHistory += `Here is the new question from the interviewer: ${transcript}`;
+      
+      // Create a message including system-like instruction with history
       const messages: GeminiMessage[] = [
         {
           role: 'user',
           parts: [
             {
-              text: `${systemInstruction}\n\nHere is the query: ${transcript}`,
+              text: promptWithHistory,
             },
           ],
         },
@@ -1294,7 +1360,26 @@ If you include code examples, use proper markdown code blocks with language spec
         geminiResponse.candidates[0].content.parts &&
         geminiResponse.candidates[0].content.parts.length > 0
       ) {
-        return geminiResponse.candidates[0].content.parts[0].text || 'No response generated';
+        const assistantResponse = geminiResponse.candidates[0].content.parts[0].text || 'No response generated';
+        
+        // Update conversation history
+        this.conversationHistory.push(
+          { role: 'user', content: transcript },
+          { role: 'assistant', content: assistantResponse }
+        );
+        
+        // Trim history if needed
+        if (this.conversationHistory.length > this.maxHistoryLength * 2) {
+          this.conversationHistory = [
+            ...this.conversationHistory.slice(0, 2), // Keep first exchange if available
+            ...this.conversationHistory.slice(-this.maxHistoryLength * 2 + 2) // And most recent ones
+          ];
+        }
+        
+        // Save conversation history after each interaction
+        this.saveConversationHistory();
+        
+        return assistantResponse;
       } else {
         return 'No response generated';
       }
@@ -1304,6 +1389,61 @@ If you include code examples, use proper markdown code blocks with language spec
       }
       console.error('Gemini API error:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Clear the conversation history
+   */
+  public clearConversationHistory(): void {
+    this.conversationHistory = [];
+    console.log('Conversation history cleared');
+  }
+  
+  /**
+   * Get the current conversation history
+   */
+  public getConversationHistory(): Array<{role: string, content: string}> {
+    return [...this.conversationHistory];
+  }
+  
+  /**
+   * Save conversation history to a file for persistence
+   */
+  public saveConversationHistory(): void {
+    try {
+      const userDataPath = app.getPath('userData');
+      const historyFilePath = path.join(userDataPath, 'conversation_history.json');
+      
+      // Create a safe copy of the history to save
+      const historyCopy = JSON.stringify(this.conversationHistory, null, 2);
+      
+      // Write to file
+      fs.writeFileSync(historyFilePath, historyCopy, 'utf8');
+      console.log('Conversation history saved to file');
+    } catch (error) {
+      console.error('Failed to save conversation history to file:', error);
+    }
+  }
+  
+  /**
+   * Load conversation history from file
+   */
+  public async loadConversationHistory(): Promise<void> {
+    try {
+      const userDataPath = app.getPath('userData');
+      const historyFilePath = path.join(userDataPath, 'conversation_history.json');
+      
+      // Check if file exists
+      if (fs.existsSync(historyFilePath)) {
+        const historyData = fs.readFileSync(historyFilePath, 'utf8');
+        this.conversationHistory = JSON.parse(historyData);
+        console.log('Loaded conversation history:', this.conversationHistory.length, 'messages');
+      }
+    } catch (error) {
+      console.error('Failed to load conversation history from file:', error);
+      // If load fails, start with empty history to be safe
+      this.conversationHistory = [];
     }
   }
 }

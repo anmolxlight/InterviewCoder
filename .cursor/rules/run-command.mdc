@@ -1,0 +1,16 @@
+---
+description: When building the project, read this file
+globs: 
+alwaysApply: false
+---
+# Run Command Rule
+
+- Always use `.\stealth-run.bat` to run this project on Windows
+- Use `./stealth-run.sh` on Mac/Linux environments
+- These commands will:
+  - Create required directories
+  - Clean previous builds
+  - Build the application
+  - Launch the app in stealth mode (invisible)
+- Remember the app runs invisibly by default - use Ctrl+B (or Cmd+B on Mac) to toggle visibility
+

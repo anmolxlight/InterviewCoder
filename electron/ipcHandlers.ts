@@ -358,4 +358,45 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       throw error;
     }
   });
+  
+  // Conversation history management handlers
+  ipcMain.handle('clear-conversation-history', () => {
+    try {
+      deps.processingHelper?.clearConversationHistory();
+      return { success: true };
+    } catch (error) {
+      console.error('Error clearing conversation history:', error);
+      return { success: false, error: 'Failed to clear conversation history' };
+    }
+  });
+  
+  ipcMain.handle('get-conversation-history', () => {
+    try {
+      const history = deps.processingHelper?.getConversationHistory() || [];
+      return { success: true, history };
+    } catch (error) {
+      console.error('Error getting conversation history:', error);
+      return { success: false, error: 'Failed to get conversation history' };
+    }
+  });
+  
+  ipcMain.handle('save-conversation-history', () => {
+    try {
+      deps.processingHelper?.saveConversationHistory();
+      return { success: true };
+    } catch (error) {
+      console.error('Error saving conversation history:', error);
+      return { success: false, error: 'Failed to save conversation history' };
+    }
+  });
+  
+  ipcMain.handle('load-conversation-history', async () => {
+    try {
+      await deps.processingHelper?.loadConversationHistory();
+      return { success: true };
+    } catch (error) {
+      console.error('Error loading conversation history:', error);
+      return { success: false, error: 'Failed to load conversation history' };
+    }
+  });
 }

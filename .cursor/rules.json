@@ -1,0 +1,44 @@
+{
+  "run_command": ".\\stealth-run.bat",
+  "run_command_mac": "./stealth-run.sh",
+  "search_directories": [
+    "src",
+    "electron",
+    "renderer"
+  ],
+  "ignore_directories": [
+    "dist",
+    "dist-electron",
+    "node_modules",
+    "release"
+  ],
+  "typescript": {
+    "eslint": true,
+    "format_on_save": true
+  },
+  "recommended_extensions": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "formulahendry.auto-rename-tag",
+    "bradlc.vscode-tailwindcss"
+  ],
+  "build_command": "npm run build",
+  "package_command_win": "npm run package-win",
+  "package_command_mac": "npm run package-mac",
+  "terminal": {
+    "env": {
+      "NODE_ENV": "development"
+    }
+  },
+  "editor": {
+    "tab_size": 2,
+    "insert_spaces": true,
+    "default_formatter": "esbenp.prettier-vscode",
+    "format_on_save": true
+  },
+  "docs": {
+    "README": "README.md",
+    "CONTRIBUTING": "CONTRIBUTING.md",
+    "CHANGES": "CHANGES.md"
+  }
+} 

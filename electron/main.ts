@@ -568,6 +568,12 @@ async function initializeApp() {
     if (state.mainWindow) {
       const speechToTextHelper = initializeSpeechToTextHelper(state.mainWindow);
       
+      // Load any saved conversation history
+      if (state.processingHelper) {
+        state.processingHelper.loadConversationHistory()
+          .catch(err => console.error('Failed to load conversation history:', err));
+      }
+      
       // Setup handler for speech transcriptions
       speechToTextHelper.on('transcription', (transcript: string) => {
         handleSpeechTranscription(transcript);
@@ -607,6 +613,12 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") {
+      // Save conversation history before quitting
+      if (state.processingHelper) {
+        state.processingHelper.saveConversationHistory()
+          .catch(err => console.error('Failed to save conversation history on exit:', err));
+      }
+      
       app.quit()
       state.mainWindow = null
     }
