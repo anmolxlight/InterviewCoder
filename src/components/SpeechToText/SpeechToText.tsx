@@ -280,20 +280,8 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
         clearTimeout(processingTimerRef.current);
       }
       
-      // Start a new timer - if no new transcription after 8 seconds, process it
-      processingTimerRef.current = setTimeout(() => {
-        if (text.trim() !== '') {
-          // For diarized transcripts, we only auto-process when we receive a transcript
-          // with an interviewer question
-          if (text.includes('Interviewer:')) {
-            // Extract interviewer text for processing
-            const interviewerText = extractInterviewerText(text);
-            if (interviewerText) {
-              processTranscript(interviewerText);
-            }
-          }
-        }
-      }, 8000);
+      // Removed timer logic to prevent duplicate processing after delay
+      // Immediate processing is handled by SpeechToTextHelper
     });
 
     const unsubscribeAiResponse = window.electronAPI.onAiResponse((aiResponse: string) => {
@@ -631,7 +619,7 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
             <div style={labelStyle}>Current Question:</div>
             <div style={transcriptContainerStyle}>
               {renderFormattedTranscript()}
-              {isProcessing && (
+              {isProcessing && !response && (
                 <div style={processingStyle}>
                   Processing question...
                 </div>
