@@ -197,6 +197,8 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
   // Timer for transcript processing
   const processingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastTranscriptRef = useRef<string>('');
+  // Add a ref to track if the current transcript has been processed
+  const hasProcessedCurrentTranscriptRef = useRef<boolean>(false);
   
   // Clean up audio resources
   const cleanupAudio = () => {
@@ -255,6 +257,8 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
     const unsubscribeTranscription = window.electronAPI.onSpeechTranscription((text: string) => {
       setTranscript(text);
       lastTranscriptRef.current = text;
+      // Reset the processed flag when new transcription comes in
+      hasProcessedCurrentTranscriptRef.current = false;
       
       // Extract interviewer's question if present
       if (text.includes('Interviewer:')) {
@@ -276,7 +280,7 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
         clearTimeout(processingTimerRef.current);
       }
       
-      // Start a new timer - if no new transcription after 1.5 seconds, process it
+      // Start a new timer - if no new transcription after 8 seconds, process it
       processingTimerRef.current = setTimeout(() => {
         if (text.trim() !== '') {
           // For diarized transcripts, we only auto-process when we receive a transcript
@@ -289,7 +293,7 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
             }
           }
         }
-      }, 1500);
+      }, 8000);
     });
 
     const unsubscribeAiResponse = window.electronAPI.onAiResponse((aiResponse: string) => {
@@ -333,6 +337,12 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
   const processTranscript = async (text: string) => {
     if (text.trim() === '' || isProcessing) return;
     
+    // Additional check to prevent duplicate processing
+    if (hasProcessedCurrentTranscriptRef.current) {
+      console.log('Skipping duplicate processing of already processed transcript');
+      return;
+    }
+    
     try {
       setIsProcessing(true);
       
@@ -341,6 +351,9 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       if (!result) {
         setError('Failed to process transcript');
         setIsProcessing(false);
+      } else {
+        // Mark this transcript as processed
+        hasProcessedCurrentTranscriptRef.current = true;
       }
     } catch (err: unknown) {
       console.error('Error processing transcript:', err);
@@ -472,8 +485,10 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       }
       
       if (isListening) {
-        // If we're stopping, process any final transcript
-        if (lastTranscriptRef.current && lastTranscriptRef.current.trim() !== '') {
+        // If we're stopping, process any final transcript ONLY if it hasn't been processed yet
+        if (lastTranscriptRef.current && 
+            lastTranscriptRef.current.trim() !== '' && 
+            !hasProcessedCurrentTranscriptRef.current) {
           if (lastTranscriptRef.current.includes('Interviewer:')) {
             const interviewerText = extractInterviewerText(lastTranscriptRef.current);
             if (interviewerText) {
@@ -492,6 +507,7 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
         setError(null);
         setIsProcessing(false);
         lastTranscriptRef.current = '';
+        hasProcessedCurrentTranscriptRef.current = false;
         await window.electronAPI.startSpeechRecognition();
         // Audio capture will be started when we receive the onSpeechRecognitionStarted event
       }

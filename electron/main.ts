@@ -111,6 +111,13 @@ export interface IIpcHandlerDeps {
   moveWindowDown: () => void
 }
 
+// Add these variables at the top of the file with the other state variables
+let lastProcessedText = '';
+let lastProcessedTime = 0;
+const DEBOUNCE_TIME = 5000; // 5 seconds
+let isCurrentlyProcessing = false; // Add a processing lock
+let processingQueue: string[] = []; // Queue for pending transcripts
+
 // Initialize helpers
 function initializeHelpers() {
   state.screenshotHelper = new ScreenshotHelper(state.view)
@@ -615,8 +622,11 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== "darwin") {
       // Save conversation history before quitting
       if (state.processingHelper) {
-        state.processingHelper.saveConversationHistory()
-          .catch(err => console.error('Failed to save conversation history on exit:', err));
+        try {
+          state.processingHelper.saveConversationHistory();
+        } catch (err) {
+          console.error('Failed to save conversation history on exit:', err);
+        }
       }
       
       app.quit()
@@ -711,12 +721,35 @@ async function handleSpeechTranscription(transcript: string): Promise<void> {
   console.log('Processing speech transcription:', transcript);
   
   try {
+    // More robust debounce check
+    const now = Date.now();
+    const isDuplicate = transcript === lastProcessedText && now - lastProcessedTime < DEBOUNCE_TIME;
+    
+    if (isDuplicate) {
+      console.log('Skipping duplicate transcript processing in main process');
+      return;
+    }
+
+    // If we're already processing something, don't start a new one
+    if (isCurrentlyProcessing) {
+      console.log('Already processing a transcript, skipping this one to avoid duplicates');
+      return;
+    }
+
+    // Set processing lock
+    isCurrentlyProcessing = true;
+    
+    // Update last processed info
+    lastProcessedText = transcript;
+    lastProcessedTime = now;
+
     const config = configHelper.loadConfig();
     
     // Use the ProcessingHelper to handle the AI request
     const processingHelper = getProcessingHelper();
     if (!processingHelper) {
       console.error('Processing helper not available');
+      isCurrentlyProcessing = false; // Release lock
       return;
     }
     
@@ -728,8 +761,14 @@ async function handleSpeechTranscription(transcript: string): Promise<void> {
     if (mainWindow) {
       mainWindow.webContents.send('ai-response', response);
     }
+    
+    // Release the processing lock
+    isCurrentlyProcessing = false;
   } catch (error) {
     console.error('Error processing speech transcription:', error);
+    
+    // Always release the lock on error
+    isCurrentlyProcessing = false;
     
     // Notify the renderer of the error
     const mainWindow = getMainWindow();
