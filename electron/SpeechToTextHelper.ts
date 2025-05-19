@@ -28,6 +28,7 @@ export class SpeechToTextHelper extends EventEmitter {
   private lastEmittedTranscript: string = '';
   private lastEmittedTime: number = 0;
   private readonly EMIT_DEBOUNCE_TIME = 8000; // 8 seconds debounce time for emissions
+  private firstSpeakerId: number | null = null; // Track the first speaker ID in a session
   
   constructor(mainWindow: BrowserWindow) {
     super();
@@ -71,6 +72,8 @@ export class SpeechToTextHelper extends EventEmitter {
   
   private setupIpcHandlers(): void {
     ipcMain.handle('start-speech-recognition', async () => {
+      // Reset first speaker ID when starting a new session
+      this.firstSpeakerId = null;
       return await this.startListening();
     });
     
@@ -142,14 +145,30 @@ export class SpeechToTextHelper extends EventEmitter {
             if (hasDiarization && transcriptResult.words && transcriptResult.words.length > 0) {
               this.processingDiarizedTranscript = true;
               
+              // Identify the first speaker if not already set
+              if (this.firstSpeakerId === null) {
+                for (const word of transcriptResult.words) {
+                  if (word.speaker !== undefined) {
+                    this.firstSpeakerId = word.speaker;
+                    console.log(`First speaker identified with ID: ${this.firstSpeakerId}`);
+                    break;
+                  }
+                }
+              }
+              
               const speakerSegments: Array<{speaker: number|null, text: string}> = [];
               let currentSpeaker: number|null = null;
               let currentText = '';
               
               for (const word of transcriptResult.words) {
-                const speaker = word.speaker !== undefined ? word.speaker : null;
+                // Map the actual speaker ID to our desired roles (first speaker = interviewer)
+                const originalSpeaker = word.speaker !== undefined ? word.speaker : null;
+                // If we have a first speaker ID, map speakers accordingly
+                const mappedSpeaker = (this.firstSpeakerId !== null && originalSpeaker !== null) 
+                  ? (originalSpeaker === this.firstSpeakerId ? 0 : 1) 
+                  : originalSpeaker;
                 
-                if (speaker !== currentSpeaker && currentText.trim() !== '') {
+                if (mappedSpeaker !== currentSpeaker && currentText.trim() !== '') {
                   speakerSegments.push({
                     speaker: currentSpeaker,
                     text: currentText.trim()
@@ -157,7 +176,7 @@ export class SpeechToTextHelper extends EventEmitter {
                   currentText = '';
                 }
                 
-                currentSpeaker = speaker;
+                currentSpeaker = mappedSpeaker;
                 currentText += ' ' + word.word;
               }
               
@@ -255,6 +274,8 @@ export class SpeechToTextHelper extends EventEmitter {
       this.liveTcp.finish();
       this.isListening = false;
       this.processedTranscriptIds.clear(); // Clear processed IDs on stop
+      // Reset first speaker ID when stopping
+      this.firstSpeakerId = null;
       return true;
     } catch (error) {
       console.error('Failed to stop speech recognition:', error);
