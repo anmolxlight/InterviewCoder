@@ -304,6 +304,21 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
             const question = line.split('Interviewer:')[1]?.trim();
             if (question) {
               setCurrentQuestion(question);
+              
+              // Check if it's actually a question before auto-processing
+              if (isLikelyQuestion(question)) {
+                // If we have a question, we could automatically process it after a small delay
+                if (processingTimerRef.current) {
+                  clearTimeout(processingTimerRef.current);
+                }
+                processingTimerRef.current = setTimeout(() => {
+                  if (!hasProcessedCurrentTranscriptRef.current) {
+                    processTranscript(question);
+                  }
+                }, 1500); // 1.5 second delay to allow for corrections
+              } else {
+                console.log('Detected speech marked as Interviewer but does not appear to be a question:', question);
+              }
             }
             break; // Only take the first interviewer line
           }
@@ -353,6 +368,24 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
     return '';
   };
   
+  // Function to check if text is likely a question or statement
+  const isLikelyQuestion = (text: string): boolean => {
+    // Check for question marks
+    if (text.includes('?')) return true;
+    
+    // Check for common question starters
+    const questionStarters = [
+      'what', 'how', 'why', 'when', 'where', 'which', 'who', 'whose', 'whom',
+      'can you', 'could you', 'will you', 'would you', 'tell me', 'explain',
+      'describe', 'elaborate', 'discuss', 'compare', 'can we', 'should', 'do you'
+    ];
+    
+    const lowerText = text.toLowerCase();
+    return questionStarters.some(starter => 
+      lowerText.startsWith(starter + ' ') || lowerText.includes(' ' + starter + ' ')
+    );
+  };
+  
   // Process transcript automatically when user stops speaking
   const processTranscript = async (text: string) => {
     if (text.trim() === '' || isProcessing) return;
@@ -360,6 +393,12 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
     // Additional check to prevent duplicate processing
     if (hasProcessedCurrentTranscriptRef.current) {
       console.log('Skipping duplicate processing of already processed transcript');
+      return;
+    }
+    
+    // New check: only process text that looks like a question
+    if (!isLikelyQuestion(text)) {
+      console.log('Skipping non-question text:', text);
       return;
     }
     
@@ -511,8 +550,10 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
             !hasProcessedCurrentTranscriptRef.current) {
           if (lastTranscriptRef.current.includes('Interviewer:')) {
             const interviewerText = extractInterviewerText(lastTranscriptRef.current);
-            if (interviewerText) {
+            if (interviewerText && isLikelyQuestion(interviewerText)) {
               processTranscript(interviewerText);
+            } else {
+              console.log('Final transcript does not appear to be a question, skipping processing');
             }
           }
         }

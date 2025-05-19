@@ -202,16 +202,22 @@ export class SpeechToTextHelper extends EventEmitter {
                 
                 if (interviewerSegments.length > 0) {
                   const interviewerText = interviewerSegments.map(s => s.text).join(' ');
-                  // Check if we've already emitted this transcript
-                  const now = Date.now();
-                  if (interviewerText !== this.lastEmittedTranscript || now - this.lastEmittedTime > this.EMIT_DEBOUNCE_TIME) {
-                    // Emit event for other handlers, specifically for AI processing
-                    this.emit('transcription', interviewerText);
-                    this.lastEmittedTranscript = interviewerText;
-                    this.lastEmittedTime = now;
-                    console.log('Emitted transcription for AI processing (diarized):', interviewerText);
+                  
+                  // Only process text that actually looks like a question
+                  if (this.isLikelyQuestion(interviewerText)) {
+                    // Check if we've already emitted this transcript
+                    const now = Date.now();
+                    if (interviewerText !== this.lastEmittedTranscript || now - this.lastEmittedTime > this.EMIT_DEBOUNCE_TIME) {
+                      // Emit event for other handlers, specifically for AI processing
+                      this.emit('transcription', interviewerText);
+                      this.lastEmittedTranscript = interviewerText;
+                      this.lastEmittedTime = now;
+                      console.log('Emitted transcription for AI processing (diarized):', interviewerText);
+                    } else {
+                      console.log('Skipped emitting duplicate transcription (diarized):', interviewerText);
+                    }
                   } else {
-                    console.log('Skipped emitting duplicate transcription (diarized):', interviewerText);
+                    console.log('Not processing interviewer text as it does not appear to be a question:', interviewerText);
                   }
                 }
               }
@@ -226,14 +232,19 @@ export class SpeechToTextHelper extends EventEmitter {
               
               if (isFinal && !this.processingDiarizedTranscript) {
                 // Only emit if we're not currently processing a diarized version of this transcript
-                const now = Date.now();
-                if (transcriptResult.transcript !== this.lastEmittedTranscript || now - this.lastEmittedTime > this.EMIT_DEBOUNCE_TIME) {
-                  this.emit('transcription', transcriptResult.transcript);
-                  this.lastEmittedTranscript = transcriptResult.transcript;
-                  this.lastEmittedTime = now;
-                  console.log('Emitted transcription for AI processing (non-diarized):', transcriptResult.transcript);
+                // And only if it looks like a question
+                if (this.isLikelyQuestion(transcriptResult.transcript)) {
+                  const now = Date.now();
+                  if (transcriptResult.transcript !== this.lastEmittedTranscript || now - this.lastEmittedTime > this.EMIT_DEBOUNCE_TIME) {
+                    this.emit('transcription', transcriptResult.transcript);
+                    this.lastEmittedTranscript = transcriptResult.transcript;
+                    this.lastEmittedTime = now;
+                    console.log('Emitted transcription for AI processing (non-diarized):', transcriptResult.transcript);
+                  } else {
+                    console.log('Skipped emitting duplicate transcription (non-diarized):', transcriptResult.transcript);
+                  }
                 } else {
-                  console.log('Skipped emitting duplicate transcription (non-diarized):', transcriptResult.transcript);
+                  console.log('Not processing transcript as it does not appear to be a question:', transcriptResult.transcript);
                 }
               }
             }
@@ -391,6 +402,12 @@ export class SpeechToTextHelper extends EventEmitter {
         console.log('Skipping already processed transcript ID');
         return true;
       }
+      
+      // Only process if it looks like an actual question
+      if (!this.isLikelyQuestion(transcript)) {
+        console.log('Not processing transcript as it does not appear to be a question:', transcript);
+        return true; // Return true to indicate successful handling (just decided not to process)
+      }
 
       this.lastProcessedText = transcript;
       this.lastProcessedTime = now;
@@ -402,6 +419,24 @@ export class SpeechToTextHelper extends EventEmitter {
       console.error('Error processing transcript:', error);
       return false;
     }
+  }
+
+  // Helper method to determine if text is likely a question
+  private isLikelyQuestion(text: string): boolean {
+    // Check for question marks
+    if (text.includes('?')) return true;
+    
+    // Check for common question starters
+    const questionStarters = [
+      'what', 'how', 'why', 'when', 'where', 'which', 'who', 'whose', 'whom',
+      'can you', 'could you', 'will you', 'would you', 'tell me', 'explain',
+      'describe', 'elaborate', 'discuss', 'compare', 'can we', 'should', 'do you'
+    ];
+    
+    const lowerText = text.toLowerCase();
+    return questionStarters.some(starter => 
+      lowerText.startsWith(starter + ' ') || lowerText.includes(' ' + starter + ' ')
+    );
   }
 }
 
