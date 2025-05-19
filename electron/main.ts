@@ -229,7 +229,8 @@ async function createWindow(): Promise<void> {
       preload: isDev
         ? path.join(__dirname, "../dist-electron/preload.js")
         : path.join(__dirname, "preload.js"),
-      scrollBounce: true
+      scrollBounce: false,
+      autoplayPolicy: 'no-user-gesture-required',
     },
     show: true,
     frame: false,
@@ -244,7 +245,8 @@ async function createWindow(): Promise<void> {
     paintWhenInitiallyHidden: true,
     titleBarStyle: "hidden",
     enableLargerThanScreen: true,
-    movable: true
+    movable: true,
+    resizable: true,
   }
 
   state.mainWindow = new BrowserWindow(windowSettings)

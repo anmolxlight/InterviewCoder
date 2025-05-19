@@ -205,6 +205,36 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
   // Add a ref to track if the current transcript has been processed
   const hasProcessedCurrentTranscriptRef = useRef<boolean>(false);
   
+  // Add a ref for response container to measure height changes
+  const responseRef = useRef<HTMLDivElement>(null);
+  
+  // Monitor response changes to update container height
+  useEffect(() => {
+    if (response && responseRef.current) {
+      // Force the container to expand to fit content
+      const updateHeight = () => {
+        // Get the parent element that might need dimension updates
+        const appContainer = document.getElementById('app-container');
+        if (appContainer) {
+          // Trigger a resize event to make the container adjust
+          window.dispatchEvent(new Event('resize'));
+        }
+      };
+      
+      // Update immediately and after a delay to ensure content is fully rendered
+      updateHeight();
+      const timeouts = [
+        setTimeout(updateHeight, 100),
+        setTimeout(updateHeight, 500),
+        setTimeout(updateHeight, 1000)
+      ];
+      
+      return () => {
+        timeouts.forEach(t => clearTimeout(t));
+      };
+    }
+  }, [response]);
+  
   // Clean up audio resources
   const cleanupAudio = () => {
     try {
@@ -634,9 +664,12 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
         </div>
       )}
 
-      {/* AI Response Display */}
+      {/* AI Response Display - with dynamic height */}
       {response && (
-        <div className="mt-2 text-xs text-white/90 backdrop-blur-md bg-green-900/20 rounded-lg py-2 px-4">
+        <div 
+          ref={responseRef}
+          className="mt-2 text-xs text-white/90 backdrop-blur-md bg-green-900/20 rounded-lg py-2 px-4 w-full max-w-[800px]"
+        >
           <div className="font-medium text-green-400 mb-1">Answer:</div>
           <div className="text-white/90 whitespace-pre-wrap break-words">
             {response}

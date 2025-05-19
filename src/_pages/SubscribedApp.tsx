@@ -52,9 +52,21 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
 
     const updateDimensions = () => {
       if (!containerRef.current) return
+      
+      // Get the actual content height including all dynamic content
       const height = containerRef.current.scrollHeight || 600
       const width = containerRef.current.scrollWidth || 800
-      window.electronAPI?.updateContentDimensions({ width, height })
+      
+      // Add extra padding to ensure no scrolling is needed
+      const paddedHeight = height + 50
+      
+      window.electronAPI?.updateContentDimensions({ 
+        width, 
+        height: paddedHeight
+      })
+      
+      // Force the container to expand to full content height
+      containerRef.current.style.minHeight = `${height}px`
     }
 
     // Force initial dimension update immediately
@@ -65,11 +77,19 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
       window.electronAPI?.updateContentDimensions({ width: 800, height: 600 })
     }, 500)
 
-    const resizeObserver = new ResizeObserver(updateDimensions)
+    const resizeObserver = new ResizeObserver(() => {
+      // Use setTimeout to allow all DOM updates to complete
+      setTimeout(updateDimensions, 50)
+    })
+    
     resizeObserver.observe(containerRef.current)
 
-    // Also watch DOM changes
-    const mutationObserver = new MutationObserver(updateDimensions)
+    // Also watch DOM changes with more specific options
+    const mutationObserver = new MutationObserver(() => {
+      // Use setTimeout to allow all DOM updates to complete
+      setTimeout(updateDimensions, 50)
+    })
+    
     mutationObserver.observe(containerRef.current, {
       childList: true,
       subtree: true,
@@ -77,14 +97,18 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
       characterData: true
     })
 
-    // Do another update after a delay to catch any late-loading content
-    const delayedUpdate = setTimeout(updateDimensions, 1000)
+    // Do additional updates after delays to catch any late-loading content
+    const delayedUpdates = [
+      setTimeout(updateDimensions, 300),
+      setTimeout(updateDimensions, 1000),
+      setTimeout(updateDimensions, 2000)
+    ]
 
     return () => {
       resizeObserver.disconnect()
       mutationObserver.disconnect()
       clearTimeout(fallbackTimer)
-      clearTimeout(delayedUpdate)
+      delayedUpdates.forEach(timeout => clearTimeout(timeout))
     }
   }, [view])
 
@@ -154,7 +178,6 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
         />
       ) : null}
       <div className="mt-6">
-        <h3 className="text-xl font-bold mb-2">Speech-to-Text</h3>
         <SpeechToText onSettingsOpen={() => setIsSpeechSettingsOpen(true)} />
         <SpeechSettings 
           open={isSpeechSettingsOpen}
