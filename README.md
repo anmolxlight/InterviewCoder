@@ -29,20 +29,20 @@ InterviewCoder is an AI-powered interview preparation assistant designed specifi
 
 1. Clone the repository
 
-   ```bash
+```bash
    git clone https://github.com/yourusername/InterviewCoder.git
    cd InterviewCoder
-   ```
+```
 
 2. Install dependencies
 
-   ```bash
-   npm install
-   ```
+```bash
+npm install
+```
 
 3. Start the application
 
-   ```bash
+```bash
    .\stealth-run.bat
    ```
 

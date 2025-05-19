@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Mic, MicOff, Settings, Speaker, Headphones, RefreshCcw } from 'lucide-react';
+import { Mic, MicOff, Settings, Headphones, RefreshCcw } from 'lucide-react';
+import { COMMAND_KEY } from "../../utils/platform";
 
 // Create a fully dynamic container without any height constraints
 const containerStyle = {
@@ -12,9 +13,10 @@ const containerStyle = {
   backgroundColor: 'rgba(15, 23, 42, 0.75)', 
   width: '100%',
   minWidth: '300px',
-  height: 'fit-content',
-  maxHeight: 'none',
-  overflow: 'visible',
+  height: 'auto',
+  minHeight: '0',
+  maxHeight: 'none !important',
+  overflow: 'visible !important',
   position: 'static' as const,
 };
 
@@ -57,9 +59,10 @@ const transcriptContainerStyle = {
   backgroundColor: 'rgba(30, 41, 59, 0.8)',
   color: 'rgba(255, 255, 255, 0.95)',
   width: '100%',
-  height: 'fit-content',
-  maxHeight: 'none',
-  overflow: 'visible',
+  height: 'auto',
+  minHeight: '0',
+  maxHeight: 'none !important',
+  overflow: 'visible !important',
   whiteSpace: 'pre-wrap' as const,
   wordBreak: 'break-word' as const,
   boxSizing: 'border-box' as const,
@@ -74,9 +77,10 @@ const responseContainerStyle = {
   backgroundColor: 'rgba(20, 83, 45, 0.75)',
   color: 'rgba(255, 255, 255, 0.95)',
   width: '100%',
-  height: 'fit-content',
-  maxHeight: 'none',
-  overflow: 'visible',
+  height: 'auto',
+  minHeight: '0',
+  maxHeight: 'none !important',
+  overflow: 'visible !important',
   whiteSpace: 'pre-wrap' as const,
   wordBreak: 'break-word' as const,
   boxSizing: 'border-box' as const,
@@ -163,9 +167,10 @@ const toggleHandleActiveStyle = {
 const wrapperStyle = {
   display: 'flex',
   flexDirection: 'column' as const,
-  height: 'fit-content',
-  maxHeight: 'none',
-  overflow: 'visible',
+  height: 'auto',
+  minHeight: '0',
+  maxHeight: 'none !important',
+  overflow: 'visible !important',
   width: '100%',
   position: 'static' as const,
 };
@@ -279,9 +284,6 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       if (processingTimerRef.current) {
         clearTimeout(processingTimerRef.current);
       }
-      
-      // Removed timer logic to prevent duplicate processing after delay
-      // Immediate processing is handled by SpeechToTextHelper
     });
 
     const unsubscribeAiResponse = window.electronAPI.onAiResponse((aiResponse: string) => {
@@ -523,121 +525,124 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
     setUseSystemAudio(!useSystemAudio);
   };
 
-  // Format transcript to only show the current interviewer question
-  const renderFormattedTranscript = () => {
-    if (!currentQuestion) {
-      return 'No questions yet. Click "Start Listening" to begin.';
-    }
-    
-    return (
-      <div>
-        <span style={interviewerTextStyle}>Interviewer: </span>
-        {currentQuestion}
-      </div>
-    );
-  };
-
   return (
-    <div style={wrapperStyle}>
-      <div style={containerStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={labelStyle}>Speech Recognition</div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button
-              onClick={() => {
-                window.electronAPI.clearConversationHistory()
-                  .then(() => {
-                    // Show brief notification that history was cleared
-                    setResponse('Conversation history cleared.');
-                    setTimeout(() => setResponse(''), 2000);
-                  })
-                  .catch((err: unknown) => {
-                    console.error('Failed to clear conversation history:', err);
-                  });
-              }}
-              style={settingsButtonStyle}
-              title="Clear conversation history"
-            >
-              <RefreshCcw size={16} />
-              <span>Clear History</span>
+    <div className="pt-2 w-fit">
+      <div className="text-xs text-white/90 backdrop-blur-md bg-black/60 rounded-lg py-2 px-4 flex items-center justify-center gap-4">
+        {/* Listen/Stop Button */}
+        <div
+          className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
+            (!useMicrophone && !useSystemAudio) ? "opacity-50 cursor-not-allowed" : ""
+          }`}
+          onClick={toggleListening}
+        >
+          <span className="text-[11px] leading-none truncate">
+            {isListening ? "Stop Listening" : "Start Listening"}
+          </span>
+          <div className="flex gap-1">
+            <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+              {COMMAND_KEY}
             </button>
-            <button onClick={onSettingsOpen} style={settingsButtonStyle}>
-              <Settings size={16} />
-              <span>Settings</span>
+            <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+              M
             </button>
           </div>
         </div>
-        
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <button 
-            onClick={toggleListening} 
-            style={isListening ? micActiveButtonStyle : micButtonStyle}
-            disabled={(!!error && !isListening) || (!useMicrophone && !useSystemAudio)}
+
+        {/* Audio Source Controls */}
+        <div className="flex items-center gap-3">
+          {/* Microphone Toggle */}
+          <div
+            className={`flex items-center gap-1.5 cursor-pointer rounded px-2 py-1 hover:bg-white/10 transition-colors ${
+              isListening ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+            onClick={toggleMicrophone}
           >
-            {isListening ? (
-              <>
-                <MicOff size={18} />
-                Stop Listening
-              </>
-            ) : (
-              <>
-                <Mic size={18} />
-                Start Listening
-              </>
-            )}
-          </button>
-        </div>
-        
-        {/* Audio source toggles */}
-        <div style={toggleContainerStyle}>
-          <div style={toggleStyle} onClick={toggleMicrophone}>
-            <div style={useMicrophone ? toggleButtonActiveStyle : toggleButtonStyle}>
-              <div style={useMicrophone ? toggleHandleActiveStyle : toggleHandleStyle} />
-            </div>
-            <Mic size={18} />
-            <span style={labelStyle}>Microphone</span>
+            <Mic size={12} className={useMicrophone ? "text-blue-400" : "text-white/50"} />
+            <span className={`text-[11px] leading-none ${useMicrophone ? "text-blue-400" : "text-white/50"}`}>
+              Mic
+            </span>
           </div>
-          
-          <div style={toggleStyle} onClick={toggleSystemAudio}>
-            <div style={useSystemAudio ? toggleButtonActiveStyle : toggleButtonStyle}>
-              <div style={useSystemAudio ? toggleHandleActiveStyle : toggleHandleStyle} />
-            </div>
-            <Headphones size={18} />
-            <span style={labelStyle}>System Audio</span>
+
+          {/* System Audio Toggle */}
+          <div
+            className={`flex items-center gap-1.5 cursor-pointer rounded px-2 py-1 hover:bg-white/10 transition-colors ${
+              isListening ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+            onClick={toggleSystemAudio}
+          >
+            <Headphones size={12} className={useSystemAudio ? "text-blue-400" : "text-white/50"} />
+            <span className={`text-[11px] leading-none ${useSystemAudio ? "text-blue-400" : "text-white/50"}`}>
+              System
+            </span>
           </div>
         </div>
-        
-        {error && (
-          <div style={errorStyle}>
-            Error: {error}
-          </div>
-        )}
-        
-        {/* Only show the current interviewer question */}
-        {currentQuestion && (
-          <div style={{ width: '100%', overflow: 'visible' }}>
-            <div style={labelStyle}>Current Question:</div>
-            <div style={transcriptContainerStyle}>
-              {renderFormattedTranscript()}
-              {isProcessing && !response && (
-                <div style={processingStyle}>
-                  Processing question...
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        
-        {/* Only show current response in fully dynamic container */}
-        {response && (
-          <div style={{ width: '100%', overflow: 'visible' }}>
-            <div style={labelStyle}>Answer:</div>
-            <div style={responseContainerStyle}>
-              {response}
-            </div>
-          </div>
-        )}
+
+        {/* Separator */}
+        <div className="mx-1 h-4 w-px bg-white/20" />
+
+        {/* Settings Button */}
+        <div
+          className="flex items-center gap-1.5 cursor-pointer rounded px-2 py-1 hover:bg-white/10 transition-colors"
+          onClick={onSettingsOpen}
+        >
+          <Settings size={12} className="text-white/70" />
+          <span className="text-[11px] leading-none text-white/70">
+            Settings
+          </span>
+        </div>
+
+        {/* Clear History Button */}
+        <div
+          className="flex items-center gap-1.5 cursor-pointer rounded px-2 py-1 hover:bg-white/10 transition-colors"
+          onClick={() => {
+            window.electronAPI.clearConversationHistory()
+              .then(() => {
+                setResponse('Conversation history cleared.');
+                setTimeout(() => setResponse(''), 2000);
+              })
+              .catch((err: unknown) => {
+                console.error('Failed to clear conversation history:', err);
+              });
+          }}
+        >
+          <RefreshCcw size={12} className="text-white/70" />
+          <span className="text-[11px] leading-none text-white/70">
+            Clear
+          </span>
+        </div>
       </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="mt-2 text-xs text-red-400 bg-red-900/20 backdrop-blur-md rounded-lg py-2 px-4">
+          Error: {error}
+        </div>
+      )}
+
+      {/* Current Question Display */}
+      {currentQuestion && (
+        <div className="mt-2 text-xs text-white/90 backdrop-blur-md bg-black/60 rounded-lg py-2 px-4">
+          <div className="font-medium text-blue-400 mb-1">Current Question:</div>
+          <div className="text-white/90 whitespace-pre-wrap break-words">
+            {currentQuestion}
+            {isProcessing && !response && (
+              <div className="mt-1 text-blue-400 text-[11px]">
+                Processing question...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* AI Response Display */}
+      {response && (
+        <div className="mt-2 text-xs text-white/90 backdrop-blur-md bg-green-900/20 rounded-lg py-2 px-4">
+          <div className="font-medium text-green-400 mb-1">Answer:</div>
+          <div className="text-white/90 whitespace-pre-wrap break-words">
+            {response}
+          </div>
+        </div>
+      )}
     </div>
   );
 } 

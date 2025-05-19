@@ -1,7 +1,7 @@
 ---
-description: When building the project, read this file
+description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 # Run Command Rule
 
