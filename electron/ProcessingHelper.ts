@@ -469,7 +469,7 @@ export class ProcessingHelper {
         const messages: ChatCompletionMessageParam[] = [
           {
             role: "system" as const, 
-            content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
+            content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. If the screenshot contains a coding problem, return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. If the screenshot contains an MCQ, integer question, or aptitude question, return in JSON format with these fields: problem_statement, question_type (one of: 'mcq', 'integer', 'aptitude'), options (for MCQs, array of option text). Just return the structured JSON without any other text."
           },
           {
             role: "user" as const,
@@ -523,7 +523,7 @@ export class ProcessingHelper {
               role: "user",
               parts: [
                 {
-                  text: `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
+                  text: `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. If the screenshot contains a coding problem, return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. If the screenshot contains an MCQ, integer question, or aptitude question, return in JSON format with these fields: problem_statement, question_type (one of: 'mcq', 'integer', 'aptitude'), options (for MCQs, array of option text). Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
                 },
                 ...imageDataList.map(data => ({
                   inlineData: {
@@ -666,7 +666,48 @@ export class ProcessingHelper {
       }
 
       // Create prompt for solution generation
-      const promptText = `
+      let promptText = "";
+      
+      if (problemInfo.question_type === 'mcq') {
+        // Handle MCQ type questions
+        promptText = `
+Solve the following multiple choice question:
+
+QUESTION:
+${problemInfo.problem_statement}
+
+OPTIONS:
+${problemInfo.options ? problemInfo.options.map((opt: string, idx: number) => `${idx+1}. ${opt}`).join('\n') : "Options not provided clearly. Analyze the problem statement to identify options."}
+
+I need you to think through this step-by-step:
+1. First, analyze what the question is asking
+2. Examine each option methodically
+3. Use logical reasoning to evaluate each option
+4. Explain why incorrect options are wrong
+5. Explain why the correct option is right
+6. State your final answer only after detailed analysis
+
+IMPORTANT: Do not immediately identify the correct answer. Walk through your reasoning process thoroughly.
+`;
+      } else if (problemInfo.question_type === 'integer' || problemInfo.question_type === 'aptitude') {
+        // Handle integer/aptitude type questions
+        promptText = `
+Solve the following ${problemInfo.question_type === 'integer' ? 'numerical' : 'aptitude'} question:
+
+PROBLEM:
+${problemInfo.problem_statement}
+
+I need your solution to include:
+1. A clear breakdown of the problem
+2. Step-by-step approach to solving it
+3. All calculations and reasoning shown clearly
+4. A final answer that directly addresses the question
+
+IMPORTANT: Show all your work and explain your reasoning for each step. Think logically and methodically.
+`;
+      } else {
+        // Default coding problem handling
+        promptText = `
 Generate a detailed solution for the following coding problem:
 
 PROBLEM STATEMENT:
@@ -693,6 +734,7 @@ For complexity explanations, please be thorough. For example: "Time complexity: 
 
 Your solution should be efficient, well-commented, and handle edge cases.
 `;
+      }
 
       let responseContent;
       
@@ -709,7 +751,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
         const solutionResponse = await this.openaiClient.chat.completions.create({
           model: config.solutionModel || "gpt-4o",
           messages: [
-            { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations." },
+            { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations. You can also solve MCQs, integer questions, and aptitude problems. For MCQs, analyze each option methodically with step-by-step reasoning (chain of thought), don't give away the answer immediately. For integer and aptitude questions, show your work step-by-step and arrive at the final answer with clear logical reasoning." },
             { role: "user", content: promptText }
           ],
           max_tokens: 4000,
@@ -733,7 +775,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
               role: "user",
               parts: [
                 {
-                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem. You can also solve MCQs, integer questions, and aptitude problems. For MCQs, analyze each option methodically with step-by-step reasoning (chain of thought), don't give away the answer immediately. For integer and aptitude questions, show your work step-by-step and arrive at the final answer with clear logical reasoning.\n\n${promptText}`
                 }
               ]
             }
@@ -773,7 +815,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
       const code = codeMatch ? codeMatch[1].trim() : responseContent;
       
       // Extract thoughts, looking for bullet points or numbered lists
-      const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:)([\s\S]*?)(?:Time complexity:|$)/i;
+      const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:|Analysis:|Step-by-step:|Solution approach:)([\s\S]*?)(?:Time complexity:|Conclusion:|Final answer:|Therefore,|$)/i;
       const thoughtsMatch = responseContent.match(thoughtsRegex);
       let thoughts: string[] = [];
       
@@ -792,39 +834,67 @@ Your solution should be efficient, well-commented, and handle edge cases.
         }
       }
       
-      // Extract complexity information
-      const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
-      const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
-      
+      // Default values for different question types
       let timeComplexity = "O(n) - Linear time complexity because we only iterate through the array once. Each element is processed exactly one time, and the hashmap lookups are O(1) operations.";
       let spaceComplexity = "O(n) - Linear space complexity because we store elements in the hashmap. In the worst case, we might need to store all elements before finding the solution pair.";
       
-      const timeMatch = responseContent.match(timeComplexityPattern);
-      if (timeMatch && timeMatch[1]) {
-        timeComplexity = timeMatch[1].trim();
-        if (!timeComplexity.match(/O\([^)]+\)/i)) {
-          timeComplexity = `O(n) - ${timeComplexity}`;
-        } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
-          const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = timeComplexity.replace(notation, '').trim();
-            timeComplexity = `${notation} - ${rest}`;
+      // For non-coding problems, use different complexity fields
+      if (problemInfo.question_type === 'mcq' || problemInfo.question_type === 'integer' || problemInfo.question_type === 'aptitude') {
+        // Look for conclusion/final answer
+        const finalAnswerRegex = /(?:Final answer:|In conclusion:|Therefore,|Thus,|The answer is:|The correct option is:|The solution is:)(.*?)(?:$|\.)/i;
+        const finalAnswerMatch = responseContent.match(finalAnswerRegex);
+        
+        if (finalAnswerMatch && finalAnswerMatch[1]) {
+          timeComplexity = "Final Answer: " + finalAnswerMatch[1].trim();
+        } else {
+          // Try to extract from the last paragraph
+          const paragraphs = responseContent.split(/\n\s*\n/);
+          if (paragraphs.length > 0) {
+            const lastPara = paragraphs[paragraphs.length - 1].trim();
+            timeComplexity = "Conclusion: " + lastPara;
+          } else {
+            timeComplexity = "See analysis for conclusion";
           }
         }
-      }
-      
-      const spaceMatch = responseContent.match(spaceComplexityPattern);
-      if (spaceMatch && spaceMatch[1]) {
-        spaceComplexity = spaceMatch[1].trim();
-        if (!spaceComplexity.match(/O\([^)]+\)/i)) {
-          spaceComplexity = `O(n) - ${spaceComplexity}`;
-        } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
-          const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = spaceComplexity.replace(notation, '').trim();
-            spaceComplexity = `${notation} - ${rest}`;
+        
+        // Space complexity field used for explanation summary
+        spaceComplexity = problemInfo.question_type === 'mcq' ? 
+          "Multiple Choice Question - See reasoning for option analysis" : 
+          (problemInfo.question_type === 'integer' ? 
+            "Numerical Question - See step-by-step solution" : 
+            "Aptitude Question - See detailed solution approach");
+      } else {
+        // For coding problems, extract complexity normally
+        const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
+        const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
+        
+        const timeMatch = responseContent.match(timeComplexityPattern);
+        if (timeMatch && timeMatch[1]) {
+          timeComplexity = timeMatch[1].trim();
+          if (!timeComplexity.match(/O\([^)]+\)/i)) {
+            timeComplexity = `O(n) - ${timeComplexity}`;
+          } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
+            const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
+            if (notationMatch) {
+              const notation = notationMatch[0];
+              const rest = timeComplexity.replace(notation, '').trim();
+              timeComplexity = `${notation} - ${rest}`;
+            }
+          }
+        }
+        
+        const spaceMatch = responseContent.match(spaceComplexityPattern);
+        if (spaceMatch && spaceMatch[1]) {
+          spaceComplexity = spaceMatch[1].trim();
+          if (!spaceComplexity.match(/O\([^)]+\)/i)) {
+            spaceComplexity = `O(n) - ${spaceComplexity}`;
+          } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
+            const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
+            if (notationMatch) {
+              const notation = notationMatch[0];
+              const rest = spaceComplexity.replace(notation, '').trim();
+              spaceComplexity = `${notation} - ${rest}`;
+            }
           }
         }
       }
