@@ -51,12 +51,32 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
     }
   }, [isTooltipVisible, onTooltipVisibilityChange])
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tooltipRef.current && !tooltipRef.current.contains(event.target as Node)) {
+        setIsTooltipVisible(false)
+      }
+    }
+
+    if (isTooltipVisible) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isTooltipVisible])
+
   const handleMouseEnter = () => {
     setIsTooltipVisible(true)
   }
 
   const handleMouseLeave = () => {
     setIsTooltipVisible(false)
+  }
+
+  const handleSettingsClick = () => {
+    setIsTooltipVisible(!isTooltipVisible)
   }
 
   return (
@@ -196,13 +216,12 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
           <div className="mx-2 h-4 w-px bg-white/20" />
 
           {/* Settings with Tooltip */}
-          <div
-            className="relative inline-block"
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-          >
+          <div className="relative inline-block">
             {/* Gear icon */}
-            <div className="w-4 h-4 flex items-center justify-center cursor-pointer text-white/70 hover:text-white/90 transition-colors">
+            <div 
+              className="w-4 h-4 flex items-center justify-center cursor-pointer text-white/70 hover:text-white/90 transition-colors"
+              onClick={handleSettingsClick}
+            >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
@@ -223,11 +242,9 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
               <div
                 ref={tooltipRef}
                 className="absolute top-full right-0 mt-2 w-80"
-                style={{ zIndex: 100 }}
+                style={{ zIndex: 9999 }}
               >
-                {/* Add transparent bridge */}
-                <div className="absolute -top-2 right-0 w-full h-2" />
-                <div className="p-3 text-xs bg-black/80 backdrop-blur-md rounded-lg border border-white/10 text-white/90 shadow-lg">
+                <div className="p-3 text-xs bg-black/90 backdrop-blur-md rounded-lg border border-white/20 text-white/90 shadow-2xl">
                   <div className="space-y-4">
                     <h3 className="font-medium whitespace-nowrap">
                       Keyboard Shortcuts
