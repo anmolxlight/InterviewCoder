@@ -189,6 +189,11 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
   // Track only the current interviewer question
   const [currentQuestion, setCurrentQuestion] = useState('');
   
+  // Enhanced VAD status tracking
+  const [vadStatus, setVadStatus] = useState<'idle' | 'listening' | 'processing_question' | 'waiting_for_completion' | 'ai_processing'>('idle');
+  const [questionQuality, setQuestionQuality] = useState<'unknown' | 'likely_question' | 'complete_question' | 'invalid'>('unknown');
+  const [lastQuestionTime, setLastQuestionTime] = useState<Date | null>(null);
+  
   // Audio source toggles
   const [useMicrophone, setUseMicrophone] = useState(true);
   const [useSystemAudio, setUseSystemAudio] = useState(false);
@@ -273,6 +278,8 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       setIsListening(true);
       setError(null);
       setIsProcessing(false);
+      setVadStatus('listening');
+      setQuestionQuality('unknown');
       
       // Start capturing audio when Deepgram is ready
       startAudioCapture();
@@ -280,12 +287,16 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
 
     const unsubscribeStopped = window.electronAPI.onSpeechRecognitionStopped(() => {
       setIsListening(false);
+      setVadStatus('idle');
+      setQuestionQuality('unknown');
       cleanupAudio();
     });
 
     const unsubscribeError = window.electronAPI.onSpeechRecognitionError((errorMsg: string) => {
       setIsListening(false);
       setError(errorMsg);
+      setVadStatus('idle');
+      setQuestionQuality('invalid');
       cleanupAudio();
     });
 
@@ -294,6 +305,11 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       lastTranscriptRef.current = text;
       // Reset the processed flag when new transcription comes in
       hasProcessedCurrentTranscriptRef.current = false;
+      
+      // Update VAD status based on transcription content
+      if (isListening) {
+        setVadStatus('processing_question');
+      }
       
       // Extract interviewer's question if present
       if (text.includes('Interviewer:')) {
@@ -305,23 +321,42 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
             if (question) {
               setCurrentQuestion(question);
               
+              // Enhanced question quality assessment
+              const quality = assessQuestionQuality(question);
+              setQuestionQuality(quality);
+              
               // Check if it's actually a question before auto-processing
-              if (isLikelyQuestion(question)) {
+              if (quality === 'complete_question' || quality === 'likely_question') {
+                setVadStatus('waiting_for_completion');
+                setLastQuestionTime(new Date());
+                
                 // If we have a question, we could automatically process it after a small delay
                 if (processingTimerRef.current) {
                   clearTimeout(processingTimerRef.current);
                 }
                 processingTimerRef.current = setTimeout(() => {
                   if (!hasProcessedCurrentTranscriptRef.current) {
+                    setVadStatus('ai_processing');
                     processTranscript(question);
                   }
-                }, 1500); // 1.5 second delay to allow for corrections
+                }, quality === 'complete_question' ? 800 : 2000); // Shorter delay for complete questions
               } else {
-                console.log('Detected speech marked as Interviewer but does not appear to be a question:', question);
+                console.log('Detected speech marked as Interviewer but quality assessment failed:', question);
+                setQuestionQuality('invalid');
               }
             }
             break; // Only take the first interviewer line
           }
+        }
+      } else {
+        // Non-diarized transcript - assess quality directly
+        const quality = assessQuestionQuality(text);
+        setQuestionQuality(quality);
+        
+        if (quality === 'complete_question' || quality === 'likely_question') {
+          setCurrentQuestion(text);
+          setVadStatus('waiting_for_completion');
+          setLastQuestionTime(new Date());
         }
       }
       
@@ -334,11 +369,16 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
     const unsubscribeAiResponse = window.electronAPI.onAiResponse((aiResponse: string) => {
       setResponse(aiResponse);
       setIsProcessing(false);
+      setVadStatus(isListening ? 'listening' : 'idle');
+      setQuestionQuality('unknown');
+      setLastQuestionTime(new Date());
     });
 
     const unsubscribeAiError = window.electronAPI.onAiResponseError((errorMsg: string) => {
       setError(errorMsg);
       setIsProcessing(false);
+      setVadStatus(isListening ? 'listening' : 'idle');
+      setQuestionQuality('invalid');
     });
 
     return () => {
@@ -355,6 +395,70 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
     };
   }, []);
   
+  // Enhanced question quality assessment
+  const assessQuestionQuality = (text: string): 'unknown' | 'likely_question' | 'complete_question' | 'invalid' => {
+    if (!text || text.trim().length < 5) {
+      return 'invalid';
+    }
+
+    const trimmedText = text.trim();
+    
+    // Check for candidate speech patterns (should be invalid for interviewer questions)
+    const candidateIndicators = [
+      'i think', 'i believe', 'i would', 'i will', 'i have', 'i am',
+      'my approach', 'my solution', 'my experience', 'my understanding',
+      'let me', 'so basically', 'essentially', 'fundamentally'
+    ];
+    
+    const lowerText = trimmedText.toLowerCase();
+    const hasCandidateIndicators = candidateIndicators.some(indicator => 
+      lowerText.includes(indicator)
+    );
+    
+    if (hasCandidateIndicators) {
+      return 'invalid';
+    }
+
+    // Check for complete question markers
+    const hasQuestionMark = trimmedText.includes('?');
+    const hasProperEnding = /[.!?]$/.test(trimmedText);
+    const isReasonablyLong = trimmedText.length > 15;
+
+    // Enhanced question pattern detection
+    const questionStarters = [
+      'what', 'how', 'why', 'when', 'where', 'which', 'who', 'whose', 'whom',
+      'can you', 'could you', 'will you', 'would you', 'please',
+      'tell me', 'explain', 'describe', 'elaborate', 'discuss', 'show me',
+      'walk through', 'think about', 'consider', 'solve', 'implement',
+      'write a function', 'design a system', 'optimize this', 'improve'
+    ];
+    
+    const hasQuestionStarter = questionStarters.some(starter => 
+      lowerText.startsWith(starter + ' ') || lowerText.includes(' ' + starter + ' ')
+    );
+
+    // Technical interview patterns
+    const technicalPatterns = [
+      'algorithm', 'complexity', 'time complexity', 'space complexity', 
+      'big o', 'runtime', 'optimize', 'efficient', 'approach', 'solution'
+    ];
+    
+    const hasTechnicalPattern = technicalPatterns.some(pattern =>
+      lowerText.includes(pattern)
+    );
+
+    // Determine quality
+    if (hasQuestionMark && hasQuestionStarter && isReasonablyLong) {
+      return 'complete_question';
+    } else if (hasProperEnding && (hasQuestionStarter || hasTechnicalPattern) && isReasonablyLong) {
+      return 'complete_question';
+    } else if (hasQuestionStarter || hasTechnicalPattern || hasQuestionMark) {
+      return 'likely_question';
+    }
+
+    return 'invalid';
+  };
+  
   // Helper function to extract interviewer text
   const extractInterviewerText = (text: string): string => {
     if (!text.includes('Interviewer:')) return '';
@@ -368,22 +472,9 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
     return '';
   };
   
-  // Function to check if text is likely a question or statement
+  // Function to check if text is likely a question or statement (legacy - kept for compatibility)
   const isLikelyQuestion = (text: string): boolean => {
-    // Check for question marks
-    if (text.includes('?')) return true;
-    
-    // Check for common question starters
-    const questionStarters = [
-      'what', 'how', 'why', 'when', 'where', 'which', 'who', 'whose', 'whom',
-      'can you', 'could you', 'will you', 'would you', 'tell me', 'explain',
-      'describe', 'elaborate', 'discuss', 'compare', 'can we', 'should', 'do you'
-    ];
-    
-    const lowerText = text.toLowerCase();
-    return questionStarters.some(starter => 
-      lowerText.startsWith(starter + ' ') || lowerText.includes(' ' + starter + ' ')
-    );
+    return assessQuestionQuality(text) !== 'invalid';
   };
   
   // Process transcript automatically when user stops speaking
@@ -396,29 +487,35 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
       return;
     }
     
-    // New check: only process text that looks like a question
-    if (!isLikelyQuestion(text)) {
-      console.log('Skipping non-question text:', text);
+    // Enhanced quality check
+    const quality = assessQuestionQuality(text);
+    if (quality === 'invalid') {
+      console.log('Skipping invalid text for AI processing:', text);
+      setVadStatus(isListening ? 'listening' : 'idle');
       return;
     }
     
     try {
       setIsProcessing(true);
+      setVadStatus('ai_processing');
       
       // Process the transcript through the API
       const result = await window.electronAPI.processTranscript(text);
       if (!result) {
         setError('Failed to process transcript');
         setIsProcessing(false);
+        setVadStatus(isListening ? 'listening' : 'idle');
       } else {
         // Mark this transcript as processed
         hasProcessedCurrentTranscriptRef.current = true;
+        console.log('Successfully processed question:', text);
       }
     } catch (err: unknown) {
       console.error('Error processing transcript:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to process transcript';
       setError(errorMessage);
       setIsProcessing(false);
+      setVadStatus(isListening ? 'listening' : 'idle');
     }
   };
   
@@ -596,6 +693,37 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
     setUseSystemAudio(!useSystemAudio);
   };
 
+  // Enhanced status messages based on VAD state
+  const getStatusMessage = (): string => {
+    switch (vadStatus) {
+      case 'idle':
+        return 'Ready to listen for interview questions';
+      case 'listening':
+        return 'Listening for complete question...';
+      case 'processing_question':
+        return 'Analyzing question completeness...';
+      case 'waiting_for_completion':
+        return 'Waiting for question to complete...';
+      case 'ai_processing':
+        return 'Generating response...';
+      default:
+        return 'Speech-to-text ready';
+    }
+  };
+
+  const getQuestionQualityIndicator = (): string => {
+    switch (questionQuality) {
+      case 'likely_question':
+        return '🟡 Potential question detected';
+      case 'complete_question':
+        return '🟢 Complete question detected';
+      case 'invalid':
+        return '🔴 Invalid or incomplete input';
+      default:
+        return '';
+    }
+  };
+
   return (
     <div className="pt-2 w-fit">
       <div className="text-xs text-white/90 backdrop-blur-md bg-black/60 rounded-lg py-2 px-4 flex items-center justify-center gap-4">
@@ -690,33 +818,78 @@ export function SpeechToText({ onSettingsOpen }: SpeechToTextProps) {
         </div>
       )}
 
-      {/* Current Question Display */}
-      {currentQuestion && (
-        <div className="mt-2 text-xs text-white/90 backdrop-blur-md bg-black/60 rounded-lg py-2 px-4">
-          <div className="font-medium text-blue-400 mb-1">Current Question:</div>
-          <div className="text-white/90 whitespace-pre-wrap break-words">
-            {currentQuestion}
-            {isProcessing && !response && (
-              <div className="mt-1 text-blue-400 text-[11px]">
-                Processing question...
+      {/* Enhanced VAD Status Display */}
+      {(isListening || vadStatus !== 'idle') && (
+        <div className="mt-2 text-xs text-blue-400 bg-blue-900/20 backdrop-blur-md rounded-lg py-2 px-4">
+          <div className="flex items-center justify-between">
+            <span>{getStatusMessage()}</span>
+            {vadStatus === 'ai_processing' && (
+              <div className="ml-2 flex space-x-1">
+                <div className="w-1 h-1 bg-blue-400 rounded-full animate-bounce"></div>
+                <div className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
               </div>
             )}
+          </div>
+          {questionQuality !== 'unknown' && (
+            <div className="mt-1 text-xs opacity-80">
+              {getQuestionQualityIndicator()}
+            </div>
+          )}
+          {lastQuestionTime && vadStatus === 'ai_processing' && (
+            <div className="mt-1 text-xs opacity-60">
+              Processing question from {lastQuestionTime.toLocaleTimeString()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Current Question Display */}
+      {currentQuestion && (
+        <div className="mt-2 text-xs text-yellow-300 bg-yellow-900/20 backdrop-blur-md rounded-lg py-2 px-4">
+          <div className="font-medium mb-1">Current Question:</div>
+          <div className="opacity-90">{currentQuestion}</div>
+        </div>
+      )}
+
+      {/* Transcript Display */}
+      {transcript && (
+        <div className="mt-2 text-xs text-white/80 bg-white/10 backdrop-blur-md rounded-lg py-2 px-4">
+          <div className="font-medium mb-1 text-white/90">Live Transcript:</div>
+          <div className="whitespace-pre-wrap opacity-80">{transcript}</div>
+        </div>
+      )}
+
+      {/* Response Display */}
+      {response && (
+        <div 
+          ref={responseRef}
+          className="mt-2 text-xs text-green-300 bg-green-900/20 backdrop-blur-md rounded-lg py-2 px-4 max-w-2xl"
+        >
+          <div className="font-medium mb-1 text-green-400">AI Response:</div>
+          <div className="whitespace-pre-wrap opacity-90 leading-relaxed">{response}</div>
+          {lastQuestionTime && (
+            <div className="mt-2 text-xs opacity-60 text-green-200">
+              Response generated at {new Date().toLocaleTimeString()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Processing Indicator */}
+      {isProcessing && vadStatus === 'ai_processing' && (
+        <div className="mt-2 text-xs text-blue-400 bg-blue-900/20 backdrop-blur-md rounded-lg py-2 px-4">
+          <div className="flex items-center gap-2">
+            <div className="flex space-x-1">
+              <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce"></div>
+              <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+              <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+            </div>
+            <span>Generating interview response...</span>
           </div>
         </div>
       )}
 
-      {/* AI Response Display - with dynamic height */}
-      {response && (
-        <div 
-          ref={responseRef}
-          className="mt-2 text-xs text-white/90 backdrop-blur-md bg-green-900/20 rounded-lg py-2 px-4 w-full max-w-[800px]"
-        >
-          <div className="font-medium text-green-400 mb-1">Answer:</div>
-          <div className="text-white/90 whitespace-pre-wrap break-words">
-            {response}
-          </div>
-        </div>
-      )}
     </div>
   );
 } 

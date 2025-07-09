@@ -723,18 +723,43 @@ async function handleSpeechTranscription(transcript: string): Promise<void> {
   console.log('Processing speech transcription:', transcript);
   
   try {
-    // More robust debounce check
+    // Enhanced validation for complete questions
+    if (!transcript || transcript.trim().length < 5) {
+      console.log('Skipping very short transcript:', transcript);
+      return;
+    }
+    
+    const trimmedTranscript = transcript.trim();
+    
+    // More robust duplicate detection with better timing
     const now = Date.now();
-    const isDuplicate = transcript === lastProcessedText && now - lastProcessedTime < DEBOUNCE_TIME;
+    const timeSinceLastProcessed = now - lastProcessedTime;
+    const isDuplicate = (
+      trimmedTranscript === lastProcessedText && 
+      timeSinceLastProcessed < DEBOUNCE_TIME
+    );
     
     if (isDuplicate) {
-      console.log('Skipping duplicate transcript processing in main process');
+      console.log(`Skipping duplicate transcript (${timeSinceLastProcessed}ms ago):`, trimmedTranscript);
       return;
     }
 
-    // If we're already processing something, don't start a new one
+    // Enhanced processing lock with timeout protection
     if (isCurrentlyProcessing) {
-      console.log('Already processing a transcript, skipping this one to avoid duplicates');
+      // If we've been processing for too long (>30 seconds), reset the lock
+      if (timeSinceLastProcessed > 30000) {
+        console.log('Processing lock timeout detected, resetting...');
+        isCurrentlyProcessing = false;
+      } else {
+        console.log('Already processing a transcript, queuing this one');
+        processingQueue.push(trimmedTranscript);
+        return;
+      }
+    }
+
+    // Additional question quality checks
+    if (!isValidInterviewQuestion(trimmedTranscript)) {
+      console.log('Transcript does not appear to be a valid interview question:', trimmedTranscript);
       return;
     }
 
@@ -742,30 +767,36 @@ async function handleSpeechTranscription(transcript: string): Promise<void> {
     isCurrentlyProcessing = true;
     
     // Update last processed info
-    lastProcessedText = transcript;
+    lastProcessedText = trimmedTranscript;
     lastProcessedTime = now;
 
-    const config = configHelper.loadConfig();
+    console.log('Sending transcript to AI for processing...');
     
     // Use the ProcessingHelper to handle the AI request
     const processingHelper = getProcessingHelper();
     if (!processingHelper) {
       console.error('Processing helper not available');
-      isCurrentlyProcessing = false; // Release lock
+      isCurrentlyProcessing = false;
+      processNextInQueue();
       return;
     }
     
-    // Process the transcript through AI
-    const response = await processingHelper.processTranscriptionWithAI(transcript);
+    // Process the transcript through AI with enhanced error handling
+    const response = await processingHelper.processTranscriptionWithAI(trimmedTranscript);
     
     // Send the AI response to the renderer
     const mainWindow = getMainWindow();
     if (mainWindow) {
       mainWindow.webContents.send('ai-response', response);
+      console.log('AI response sent to renderer');
     }
     
     // Release the processing lock
     isCurrentlyProcessing = false;
+    
+    // Process any queued transcripts
+    processNextInQueue();
+    
   } catch (error) {
     console.error('Error processing speech transcription:', error);
     
@@ -775,7 +806,75 @@ async function handleSpeechTranscription(transcript: string): Promise<void> {
     // Notify the renderer of the error
     const mainWindow = getMainWindow();
     if (mainWindow) {
-      mainWindow.webContents.send('ai-response-error', error.message || 'Error processing speech');
+      const errorMessage = error instanceof Error ? error.message : 'Error processing speech';
+      mainWindow.webContents.send('ai-response-error', errorMessage);
+    }
+    
+    // Process any queued transcripts
+    processNextInQueue();
+  }
+}
+
+/**
+ * Enhanced question validation for interview context
+ */
+function isValidInterviewQuestion(text: string): boolean {
+  if (!text || text.trim().length < 10) {
+    return false;
+  }
+  
+  const trimmedText = text.trim().toLowerCase();
+  
+  // Skip if it's clearly the candidate speaking (common self-references)
+  const candidateIndicators = [
+    'i think', 'i believe', 'i would', 'i will', 'i have', 'i am',
+    'my approach', 'my solution', 'my experience', 'my understanding',
+    'let me', 'so basically', 'essentially', 'fundamentally',
+    'the answer is', 'the solution', 'this problem', 'this question'
+  ];
+  
+  const hascandidateIndicators = candidateIndicators.some(indicator => 
+    trimmedText.includes(indicator)
+  );
+  
+  if (hascandidateIndicators) {
+    console.log('Detected candidate speech patterns, skipping AI processing');
+    return false;
+  }
+  
+  // Check for interviewer patterns
+  const interviewerPatterns = [
+    // Direct questions
+    'what', 'how', 'why', 'when', 'where', 'which', 'who', 'whose', 'whom',
+    // Requests and instructions
+    'can you', 'could you', 'will you', 'would you', 'please',
+    'tell me', 'explain', 'describe', 'elaborate', 'discuss', 'show me',
+    'walk through', 'think about', 'consider', 'solve', 'implement',
+    // Interview-specific
+    'write a function', 'design a system', 'optimize this', 'improve',
+    'time complexity', 'space complexity', 'algorithm', 'approach'
+  ];
+  
+  const hasInterviewerPattern = interviewerPatterns.some(pattern =>
+    trimmedText.includes(pattern)
+  );
+  
+  // Must have interviewer patterns OR end with question mark
+  return hasInterviewerPattern || trimmedText.endsWith('?');
+}
+
+/**
+ * Process the next transcript in the queue
+ */
+function processNextInQueue(): void {
+  if (processingQueue.length > 0 && !isCurrentlyProcessing) {
+    const nextTranscript = processingQueue.shift();
+    if (nextTranscript) {
+      console.log('Processing queued transcript:', nextTranscript);
+      // Small delay to avoid overwhelming the system
+      setTimeout(() => {
+        handleSpeechTranscription(nextTranscript);
+      }, 100);
     }
   }
 }
